@@ -1,0 +1,19 @@
+{
+  "name": "com.gameyogi.utilitytools",
+  "version": "1.1.0",
+  "displayName": "Utility Tools",
+  "description": "A lightweight set of Unity Editor productivity tools: inspector [Button] attribute (with parameters, coroutines, return values & confirmation), scene switcher overlay, inspector lock, play-from-bootstrap, live time-scale control, and one-click settings / asset shortcuts.",
+  "unity": "2021.3",
+  "keywords": [
+    "editor",
+    "tools",
+    "inspector",
+    "button",
+    "productivity",
+    "utility"
+  ],
+  "author": {
+    "name": "GameYogi"
+  },
+  "license": "MIT"
+}

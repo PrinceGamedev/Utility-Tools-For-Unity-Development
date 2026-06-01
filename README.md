@@ -10,7 +10,7 @@ Tested on Unity 6 (6000.1). APIs target Unity **2021.3+**.
 ## 📦 Structure
 
 ```
-UtilityTools/
+<repo root>/
 ├── package.json                 # UPM manifest
 ├── Runtime/                      # ships in builds (attribute only)
 │   ├── ButtonAttribute.cs
@@ -111,11 +111,23 @@ the `[MenuItem]` hotkeys.
 
 ## 📥 Installation
 
-This folder is a self-contained UPM package. Either:
+### Option A — Package Manager (Git URL) ✅ recommended
 
-- **Embedded (current):** keep it under `Assets/` — it works as-is.
-- **As a package:** move the folder into `Packages/`, or push it to a Git repo and add it via
-  *Package Manager → Add package from git URL…* pointing at the folder containing `package.json`.
+In Unity: **Window → Package Manager → `+` → Add package from git URL…**, then paste:
+
+```
+https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git
+```
+
+To pin a specific version, append a release tag:
+
+```
+https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.1.0
+```
+
+### Option B — Manual
+
+Download/clone the repo and copy the package folder into your project's `Assets/` (or `Packages/`).
 
 ---
 

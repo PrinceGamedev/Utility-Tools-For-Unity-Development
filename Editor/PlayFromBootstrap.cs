@@ -44,6 +44,19 @@ namespace UtilityTools
             EditorSceneManager.playModeStartScene = bootScene;
             Debug.Log($"[UtilityTools] Play From Bootstrap → {bootScene.name}");
             EditorApplication.isPlaying = true;
+
+            // If Unity refuses to enter Play Mode (e.g. compile errors) no state change fires, so the
+            // override would leak into the next normal Play. Watch until the request settles.
+            EditorApplication.delayCall += ClearIfPlayRefused;
+        }
+
+        private static void ClearIfPlayRefused()
+        {
+            if (EditorApplication.isPlaying) return;                // entered: EnteredEditMode clears later
+            if (EditorApplication.isPlayingOrWillChangePlaymode)    // still transitioning: check next tick
+                EditorApplication.delayCall += ClearIfPlayRefused;
+            else
+                EditorSceneManager.playModeStartScene = null;       // refused
         }
 
         private static void OnStateChanged(PlayModeStateChange change)

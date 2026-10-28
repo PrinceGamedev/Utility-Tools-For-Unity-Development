@@ -15,13 +15,15 @@ Tested on Unity 6 (6000.1). APIs target Unity **2021.3+**.
 ├── Runtime/                      # ships in builds (attribute only)
 │   ├── ButtonAttribute.cs
 │   └── UtilityTools.Runtime.asmdef   (Auto-Referenced)
-└── Editor/                       # editor-only
-    ├── ButtonMethodEditor.cs     # draws [Button]s on every MonoBehaviour
-    ├── UtilityTools.cs           # scene switcher, inspector lock, settings, PlayerPrefs
-    ├── PlayFromBootstrap.cs
-    ├── TimeScaleWindow.cs
-    ├── AssetQuickActions.cs
-    └── UtilityTools.Editor.asmdef
+├── Editor/                       # editor-only
+│   ├── ButtonMethodEditor.cs     # draws [Button]s on every MonoBehaviour / ScriptableObject
+│   ├── UtilityTools.cs           # scene switcher, inspector lock, settings, PlayerPrefs
+│   ├── PlayFromBootstrap.cs
+│   ├── TimeScaleWindow.cs
+│   ├── AssetQuickActions.cs
+│   └── UtilityTools.Editor.asmdef
+├── Tests/Editor/                 # EditMode tests (see "Running the tests")
+└── Samples~/ButtonDemo/          # importable from Package Manager → Samples
 ```
 
 The Runtime assembly is **Auto-Referenced**, so scripts in the default `Assembly-CSharp` can use
@@ -31,7 +33,8 @@ The Runtime assembly is **Auto-Referenced**, so scripts in the default `Assembly
 
 ## ✨ The `[Button]` attribute
 
-Mark any method on a `MonoBehaviour` with `[Button]` to get a clickable button in its Inspector.
+Mark any method on a `MonoBehaviour` or `ScriptableObject` with `[Button]` to get a clickable button
+in its Inspector.
 
 ```csharp
 using UtilityTools;
@@ -56,7 +59,8 @@ public class Demo : MonoBehaviour
     [Button("Spawn")]
     void Spawn(int count, GameObject prefab, List<Vector3> points) { }
 
-    // Coroutines run in the editor (advanced once per editor tick).
+    // Coroutines: StartCoroutine in Play Mode; in Edit Mode an editor pump advances them once per
+    // tick (nested IEnumerators and WaitForSecondsRealtime / WaitUntil work, WaitForSeconds doesn't wait).
     [Button("Animate")]
     IEnumerator Animate() { yield return null; }
 
@@ -78,9 +82,21 @@ public class Demo : MonoBehaviour
 | `confirm` | `bool` | Show a confirmation dialog before running |
 | `confirmMessage` | `string` | Custom confirmation text |
 
-Static methods are supported. `[Button]` is `AllowMultiple`, so a method can appear in more than
-one group. Parameter values are cached per object during the editor session; the cache is pruned
-automatically when objects are destroyed. Invokes are wrapped in `Undo` and `SetDirty`.
+- Buttons appear in declaration order, base-class buttons first. Private methods on base classes
+  are included; static methods are supported.
+- `[Button]` is `AllowMultiple`, so a method can appear in more than one group.
+- **Multi-selection:** buttons run on every selected object (static methods run once), using the
+  parameter values shown in the Inspector.
+- **Parameters** you never expand run with their defaults (the C# default value if declared).
+  Values are cached per object for the editor session and pruned when objects are destroyed.
+- Invokes are wrapped in `Undo` and `SetDirty`.
+- The Inspector is built with UI Toolkit, so UI Toolkit-only property drawers keep working.
+- **Conflicts:** this registers a fallback editor for every MonoBehaviour and ScriptableObject. Your own
+  `[CustomEditor]`s for specific types still win. If another package (Odin, NaughtyAttributes, …) does
+  the same thing, add `UTILITYTOOLS_DISABLE_BUTTON_EDITOR` to **Player → Scripting Define Symbols** to
+  turn this one off.
+
+Import **Button Demo** from **Package Manager → Utility Tools → Samples** for a working example.
 
 ---
 
@@ -93,15 +109,15 @@ All commands live under **`Tools → Utility Tools`** (and **`Assets → Utility
 | Scene Switcher UI | `Ctrl+Q` next · `Ctrl+W` prev | Overlay of enabled Build scenes; ↑/↓, Enter, Esc, release-to-open. Physical `Ctrl` on macOS too (`Cmd+Q` would quit Unity); `Option` on macOS editors older than 2022.1 |
 | Toggle Inspector Lock | `Ctrl+E` | Locks focused inspector, or all if none focused |
 | Open Package Manager | `Shift+X` | |
-| Open In Explorer / Finder | `Ctrl+Shift+E` | Selected asset's folder, or project root |
+| Open In Explorer / Finder | `Ctrl+Shift+E` | Reveals the selected file, opens the selected folder, or the project root |
 | Open Project Settings | `Ctrl+Shift+O` | |
 | Open Player Settings | `Ctrl+Shift+Alt+P` | Deep-links to the Player tab (`Ctrl+Shift+P` is Unity's Pause) |
 | Clear All PlayerPrefs | `Ctrl+Shift+D` | Confirmation required |
 | Play From Bootstrap | `F5` | Enters Play Mode from the first enabled Build scene; restores normal play on exit |
 | Force Recompile | `Ctrl+Shift+R` | |
 | Time Scale | — | Window: slider + presets + Pause/Step |
-| Copy GUID | — | `Assets →` context menu |
-| Copy Asset Path | — | `Assets →` context menu |
+| Copy GUID | — | `Assets →` context menu; one per line for multi-selection |
+| Copy Asset Path | — | `Assets →` context menu; one per line for multi-selection |
 | Reserialize Selected | — | `Assets →` context menu |
 
 Shortcuts can be rebound via **Edit → Shortcuts…** (search `Scenes/` for the switcher) or by editing
@@ -123,12 +139,25 @@ To pin a specific version, append a release tag (see the repo's
 [Tags](https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development/tags)) or a commit hash:
 
 ```
-https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.1.1
+https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.2.0
 ```
 
 ### Option B — Manual
 
 Download/clone the repo and copy the package folder into your project's `Assets/` (or `Packages/`).
+
+---
+
+## 🧪 Running the tests
+
+Package tests only compile when the consuming project marks the package as testable. Add this to
+your project's `Packages/manifest.json`:
+
+```json
+"testables": [ "com.gameyogi.utilitytools" ]
+```
+
+Then run them from **Window → General → Test Runner → EditMode**.
 
 ---
 

@@ -55,7 +55,27 @@ namespace UtilityTools
                 EditorGUILayout.HelpBox("Pause / Step apply in Play Mode. Time Scale persists into play.",
                     MessageType.None);
 
-            Repaint();
+            Remember();
+        }
+
+        // Time.timeScale / pause can change from game code or other windows. Poll at ~10 Hz and repaint
+        // only on change, instead of repainting every frame.
+        private float _lastScale = -1f;
+        private bool _lastPaused, _lastPlaying;
+
+        private void Remember()
+        {
+            _lastScale = Time.timeScale;
+            _lastPaused = EditorApplication.isPaused;
+            _lastPlaying = EditorApplication.isPlaying;
+        }
+
+        private void OnInspectorUpdate()
+        {
+            if (!Mathf.Approximately(_lastScale, Time.timeScale) ||
+                _lastPaused != EditorApplication.isPaused ||
+                _lastPlaying != EditorApplication.isPlaying)
+                Repaint();
         }
     }
 }

@@ -119,6 +119,7 @@ them in order and writes `results.txt`:
 
 ```
 refresh          import + compile after editing scripts
+compile all      clean rebuild of every assembly
 play / stop      enter / leave Play Mode          wait 5     wait between steps
 clear            clear the console                mark run 2 add a marker to bracket a test
 show 812         open the console on entry #812   status     end with the status line

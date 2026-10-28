@@ -18,6 +18,40 @@ namespace UtilityTools.AIConsole
 
     internal enum ChannelOverride { Default, On, Off }
 
+    /// <summary>Which logs one kind of player build keeps (Project Settings → Logs in builds).</summary>
+    [Serializable]
+    internal sealed class BuildLogRules
+    {
+        public bool filter;                                  // off = the build keeps every log
+        public List<string> tags = new List<string>();       // tags and systems that are kept
+        public bool keepUntagged = true;                     // logs without a [Tag] (third-party code)
+        public bool keepErrors = true;                       // errors, asserts and exceptions always pass
+
+        public bool Has(string tag)
+        {
+            for (int i = 0; i < tags.Count; i++)
+                if (string.Equals(tags[i], tag, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        public void Set(string tag, bool keep)
+        {
+            tags.RemoveAll(t => string.Equals(t, tag, StringComparison.OrdinalIgnoreCase));
+            if (keep) tags.Add(tag);
+        }
+
+        /// <summary>"UI, GA + untagged + errors" — for the build log line and the settings page.</summary>
+        public string Describe()
+        {
+            if (!filter) return "every log";
+            var parts = new List<string>();
+            if (tags.Count > 0) parts.Add(string.Join(", ", tags));
+            if (keepUntagged) parts.Add("untagged");
+            if (keepErrors) parts.Add("errors");
+            return parts.Count == 0 ? "no logs" : string.Join(" + ", parts);
+        }
+    }
+
     /// <summary>A tag colour picked in the window by 1.3.0; tags are now defined in code (LogTag).</summary>
     [Serializable]
     internal sealed class TagSetting
@@ -42,6 +76,10 @@ namespace UtilityTools.AIConsole
         public bool richTextTags = true;
         public List<ChannelSetting> channels = new List<ChannelSetting>();
         public List<TagSetting> tags = new List<TagSetting>();
+
+        // Logs in builds: which tags each kind of player build keeps
+        public BuildLogRules devBuildLogs = new BuildLogRules();
+        public BuildLogRules releaseBuildLogs = new BuildLogRules();
 
         // Capture
         public int maxEntries = 10000;

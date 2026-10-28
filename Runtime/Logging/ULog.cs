@@ -146,6 +146,7 @@ namespace UtilityTools.Logging
             if (level >= LogLevel.Error) return;
 #endif
             if (!IsOn(channel, level)) return;
+            if (!LogFilter.PassesULog(exception != null ? LogType.Exception : ToLogType(level, isAssert), channel, tags)) return;
 
             int threadId = Thread.CurrentThread.ManagedThreadId;
             bool mainThread = threadId == MainThreadId;

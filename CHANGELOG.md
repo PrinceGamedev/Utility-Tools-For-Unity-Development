@@ -51,6 +51,11 @@ All notable changes to this package are documented here. Both the package and ea
   "#4FC3F7");`) and used anywhere: `$"{Tags.UI} Opened"` writes `[UI] Opened`;
   `Tagged(params LogTag[])` on channels and `ULog`. `LogTag.All`, `LogTag.Find(name)`.
 - Unity's Console uses the `LogTag` colour for tags in rich text.
+- **Logs in builds:** Project Settings → AI Console → *Logs in builds* picks, per build type
+  (Development / Release), the tags a player keeps, plus switches for untagged logs and for errors.
+  The build stores the choice. The player then drops every other log, ULog and plain `Debug.Log`
+  (`[Tag]` prefixes) alike, before Unity writes it: no output and no stack trace. `LogFilter.Configure`
+  / `LogFilter.Clear` change it at runtime.
 
 ## [1.3.0] - 2026-10-28
 

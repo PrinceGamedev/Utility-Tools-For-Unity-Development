@@ -18,7 +18,7 @@ Tested on Unity 6 (6000.1). APIs target Unity **2021.3+**.
 ├── package.json                 # UPM manifest
 ├── Runtime/                      # ships in builds
 │   ├── ButtonAttribute.cs
-│   ├── Logging/                  # ULog, LogChannel, LogRecord (calls stripped from release builds)
+│   ├── Logging/                  # ULog, LogChannel, LogTag, LogFilter (calls stripped from release builds)
 │   └── UtilityTools.Runtime.asmdef   (Auto-Referenced)
 ├── Editor/                       # editor-only
 │   ├── Console/                  # AI Console: capture, AI bridge files, window, settings
@@ -208,6 +208,32 @@ Release behaviour switches (Project Settings → AI Console → *Release builds*
 | `UTILITYTOOLS_LOGS` | Keep Verbose / Info / Warning / Assert |
 | `UTILITYTOOLS_STRIP_ERRORS` | ULog errors and exceptions become no-ops |
 | `UTILITYTOOLS_SILENCE_UNITY_LOGS` | Filter plain `Debug.Log` / `LogWarning` (third-party code); errors still pass |
+
+### Logs in builds — keep only the tags you pick
+
+Project Settings → Utility Tools → AI Console → *Logs in builds* has a **Development** and a **Release**
+column. Turn on *Filter logs by tag* for a build type and tick the tags it keeps:
+
+```
+                         Development   Release
+Filter logs by tag           ✔            ✔
+GA                           ✔            ✔
+Notifications                ✔
+UI                           ✔
+Logs without a tag           ✔                 ← plain Debug.Log lines, mostly third-party SDKs
+Errors and exceptions        ✔            ✔    ← kept whatever their tags
+```
+
+- A log's tags are its ULog system, its `Tagged(...)` tags and the leading `[Tag]` prefixes of a plain
+  `Debug.Log` (`"[UI][GA] Opened"` → UI, GA). A log is kept when **any** of its tags is ticked.
+- The list offers your `LogTag`s, your systems and every tag seen in this session.
+- The build stores the choice; the player drops every other log before Unity writes it, so there is no
+  output and no stack trace. The Editor always shows every log.
+- The build log says what was kept: `[UtilityTools] Release build keeps these logs: GA + errors.`
+- From code (an in-game debug menu, say): `LogFilter.Configure(new[] { "UI" })`, `LogFilter.Clear()`.
+
+The filter stops the output, not the call: the message is still built. To remove a log from the build
+completely, use ULog `Verbose` / `Info` / `Warning`. The compiler removes those from release builds.
 
 **Turning systems on and off:**
 - **Project Settings:** on/off, minimum level and colour per system. These are team settings, saved in

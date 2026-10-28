@@ -38,6 +38,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   - Double-click opens the code; Copy / Copy for AI / Copy JSON / Show Similar; Ctrl/Cmd+F search,
     Ctrl/Cmd+C copy, Ctrl/Cmd+Shift+C copy for AI.
   - Status bar shows AI file state; the window title shows the error count.
+- **Project Settings → Utility Tools → AI Console**:
+  - Per-system on/off, minimum level and colour (team settings in `ProjectSettings/UtilityToolsConsole.asset`).
+  - "Only for me" per-system overrides (personal, in `UserSettings/`), also from the system chips.
+  - Release-build switches that edit the active target's scripting defines (keep logs, strip errors,
+    silence `Debug.Log`).
+  - AI file options (folder, info logs, digest size, rotation) and console history size.
+  - "Scan project for systems" finds static `LogChannel` fields.
 
 ## [1.2.0] - 2026-10-28
 

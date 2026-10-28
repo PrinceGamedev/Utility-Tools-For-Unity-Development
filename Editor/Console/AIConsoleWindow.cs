@@ -295,6 +295,8 @@ namespace UtilityTools.AIConsole
             menu.AppendAction("Open AI Files Folder", _ => AIBridge.Reveal());
             menu.AppendSeparator();
             menu.AppendAction("Settings…", _ => SettingsService.OpenProjectSettings(SettingsPath));
+            menu.AppendAction($"About Utility Tools {UtilityToolsInfo.PackageVersion}…",
+                _ => SettingsService.OpenProjectSettings("Project/Utility Tools"));
         }
 
         private static DropdownMenuAction.Status Check(bool on) =>
@@ -894,7 +896,11 @@ namespace UtilityTools.AIConsole
             _statusLeft.AddToClassList("aic-statusbar__left");
             bar.Add(_statusLeft);
 
-            _statusAi = new Label { tooltip = "AI bridge files. Click for options." };
+            _statusAi = new Label
+            {
+                tooltip = $"AI bridge files. Click for options.\nAI Console {UtilityToolsInfo.Features.AIConsole} · " +
+                          $"Utility Tools {UtilityToolsInfo.PackageVersion}"
+            };
             _statusAi.AddToClassList("aic-statusbar__ai");
             _statusAi.AddManipulator(new ContextualMenuManipulator(evt =>
             {

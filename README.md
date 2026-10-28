@@ -255,6 +255,17 @@ To pin a specific version, append a release tag (see the repo's
 https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.3.0
 ```
 
+### Versions
+
+There are two kinds of version:
+- **The package version** (e.g. `1.3.0`) is what you install and pin.
+- **Each feature has its own version** (AI Console 1.0.0, ULog 1.0.0, `[Button]` 2.0.0, …). It changes
+  only when that feature changes. In `CHANGELOG.md`, each release lists its changes under the features
+  they affect, so you can see whether a release touches the tools you use.
+
+You can see the current versions in **Project Settings → Utility Tools** (`Tools → Utility Tools → About`),
+which also has a *Copy versions* button for bug reports. The rules are in [VERSIONING.md](VERSIONING.md).
+
 ### Option B — Manual
 
 Download/clone the repo and copy the package folder into your project's `Assets/` (or `Packages/`).

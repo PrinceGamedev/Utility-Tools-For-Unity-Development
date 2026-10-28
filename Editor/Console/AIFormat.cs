@@ -290,7 +290,8 @@ namespace UtilityTools.AIConsole
         // ---------- AI-README.md ----------
         public static string Readme(string folder) =>
 $@"# AI Console — read me first (schema v{SchemaVersion})
-Live data from the Unity Editor, written by Utility Tools. Cheapest first:
+Utility Tools {UtilityToolsInfo.PackageVersion} · AI Console {UtilityToolsInfo.Features.AIConsole} · ULog {UtilityToolsInfo.Features.ULog}
+Live data from the Unity Editor. Cheapest first:
 
 1. `{folder}/status.txt` — one line: state (ok|errors|compiling|compile-failed|closed), mode, compile,
    compile_errors, errors, warnings, last_id, updated. Check this before anything else.

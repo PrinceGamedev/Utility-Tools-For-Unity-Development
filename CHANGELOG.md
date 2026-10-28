@@ -25,6 +25,19 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   - Captures logs from every thread, compiler errors/warnings, and Play / compile / clear markers.
   - Plain `Debug.Log("[Tag] …")` messages are tagged like ULog channels.
   - Writes are batched, atomic (no half-written files) and only happen when something changed.
+- **AI Console window** (`Tools → Utility Tools → AI Console`, `Ctrl+Shift+Alt+C`) — a replacement for
+  Unity's Console, built with UI Toolkit, dark and light themes:
+  - Rows with system colour strip, type icon, local time, system chip, structured fields, `×count` and `#id`.
+  - Search language: words, `"phrases"`, `-exclude`, `type:`, `sys:`, `#id`, `fp:`, `file:`, `/regex/`.
+  - Type toggles with live counts, system chips (click to filter, right-click to mute for yourself),
+    Collapse, Follow, Error Pause, Clear on Play, sort by time / newest / severity / count / system / message.
+  - Pinned compile errors with a banner; "Compiling…" banner while scripts build.
+  - Session timeline of errors / warnings / logs — click a bar to jump there.
+  - Details pane: selectable message, fields, context object (click to select it), stack trace with
+    your code highlighted and engine frames folded, exception chains, and inline source preview.
+  - Double-click opens the code; Copy / Copy for AI / Copy JSON / Show Similar; Ctrl/Cmd+F search,
+    Ctrl/Cmd+C copy, Ctrl/Cmd+Shift+C copy for AI.
+  - Status bar shows AI file state; the window title shows the error count.
 
 ## [1.2.0] - 2026-10-28
 

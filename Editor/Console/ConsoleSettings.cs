@@ -100,6 +100,9 @@ namespace UtilityTools.AIConsole
             Changed?.Invoke();
         }
 
+        /// <summary>Persist UI preferences without re-applying channel settings.</summary>
+        public void SaveQuiet() => Save(true);
+
         public ChannelOverride GetOverride(string channel)
         {
             for (int i = 0; i < overrides.Count; i++)

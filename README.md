@@ -54,13 +54,18 @@ Unity's Console with one capture pipeline and two readers:
   `fp:<fingerprint>`, `file:Spawner.cs`, `/regex/`.
 - **Filtering:** type toggles with live counts (Log / Warning / Error), combined with the tag bar.
 - **Tags:**
+  - **Defined once in code** with their colour (`LogTag`, see ULog below) and used anywhere. No colour
+    editing in the window: the code is the single source.
   - **A log can have several tags:** its ULog system, every leading `[Tag]` in the message
-    (`Debug.Log("[UI][Network] …")`), and `Spawn.Tagged("UI", "Boss").Info(…)`.
-  - **Filtering:** click one or more tag chips. With several selected, choose **Any** (the log has at
+    (`Debug.Log($"{Tags.UI}{Tags.GAEvents} …")` or a hand-written `"[UI] …"`), and
+    `Spawn.Tagged(Tags.UI, Tags.Boss).Info(…)`.
+  - **Tags bar:** every tag as a coloured chip, in the same style as on the rows, with its log count
+    (and a red error count). Tags defined in code are listed even before they are used.
+  - **Filtering:** click one or more chips. With several selected, choose **Any** (the log has at
     least one of them) or **All** (it has every one).
-  - **Edit tags** opens an inline editor: add tags and pick their colours, e.g. `UI` → blue. The colours
-    are shared with the team in `ProjectSettings/`.
   - Right-click a system chip → *Mute for me*.
+- **Rows** are columns: time, tags (one width for all rows, so messages line up), message, fields,
+  `File.cs:line` for compile messages, `#id`.
 - **Text size:** the strip's A− / A+ buttons, or `Ctrl/Cmd` + `=` / `-` / `0`. It scales rows,
   details, chips and the strip.
 - **Toolbar:** Clear, Collapse, search, and the type counts.
@@ -167,9 +172,28 @@ Systems.Spawn.Exception(e, this);
 Systems.Spawn.Info(() => ExpensiveDump());   // lazy: only built when Spawn is on
 Systems.Spawn.Assert(wave > 0, "Wave must be positive");
 Systems.Spawn.InfoOnce("Only the first time this line runs");
-Systems.Spawn.Tagged("UI", "Boss").Info("Boss bar shown");  // extra tags → [Spawn][UI][Boss]
 ULog.Info("Quick log without a system");
 ```
+
+### Tags — defined once, used anywhere
+
+```csharp
+public static class Tags   // keep all tags in one static class
+{
+    public static readonly LogTag UI             = new LogTag("UI", "#4FC3F7");
+    public static readonly LogTag GAEvents       = new LogTag("GAEvents", "#F2C14E");
+    public static readonly LogTag ProfilePicture = new LogTag("ProfilePicture", "#B388FF");
+}
+
+Debug.Log($"{Tags.GAEvents}{Tags.ProfilePicture} Uploaded");   // → "[GAEvents][ProfilePicture] Uploaded"
+Systems.Spawn.Tagged(Tags.UI, Tags.GAEvents).Info("Boss bar shown");  // → [Spawn][UI][GAEvents]
+ULog.Tagged(Tags.UI).Warning("Tap ignored");
+```
+
+The colour lives with the tag, so it is the same in the AI Console, its tags bar and Unity's Console.
+The AI Console finds a static class of `LogTag`s on its own and lists those tags before any log uses
+them. Names match without case (`[ui]` is `UI`). Project Settings → Utility Tools → AI Console → *Tags*
+lists every tag and where it is defined.
 
 | | Editor | Development build | Release build |
 |---|---|---|---|

@@ -126,6 +126,45 @@ namespace UtilityTools.AIConsole
             return frames;
         }
 
+        /// <summary>
+        /// "Namespace.Type:Method (args)" (Unity) or "Namespace.Type.Method (args)" (.NET) → "Type.Method",
+        /// for readable stack frames; the full name stays in the tooltip.
+        /// </summary>
+        internal static string ShortMethod(string method)
+        {
+            if (string.IsNullOrEmpty(method)) return method;
+            string m = method;
+            int paren = m.IndexOf(" (", StringComparison.Ordinal);
+            if (paren < 0) paren = m.IndexOf('(');
+            if (paren > 0) m = m.Substring(0, paren);
+            m = m.Trim();
+
+            string type, name;
+            int colon = m.LastIndexOf(':');
+            int ctor = m.LastIndexOf("..", StringComparison.Ordinal); // .NET constructors: Type..ctor
+            if (colon > 0)
+            {
+                type = m.Substring(0, colon);
+                name = m.Substring(colon + 1);
+            }
+            else if (ctor > 0)
+            {
+                type = m.Substring(0, ctor);
+                name = m.Substring(ctor + 1);
+            }
+            else
+            {
+                int dot = m.LastIndexOf('.');
+                if (dot <= 0) return m;
+                type = m.Substring(0, dot);
+                name = m.Substring(dot + 1);
+            }
+
+            int typeDot = type.LastIndexOf('.');
+            if (typeDot >= 0) type = type.Substring(typeDot + 1);
+            return name.StartsWith(".", StringComparison.Ordinal) ? type + name : type + "." + name;
+        }
+
         /// <summary>Project-relative "Assets/…" / "Packages/…" path, or the path as given (null if unknown).</summary>
         internal static string NormalizePath(string file)
         {

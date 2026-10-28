@@ -13,7 +13,7 @@ Utility Tools has **two kinds of version**. Both follow [Semantic Versioning](ht
 | Feature | Version | Covers |
 |---|---|---|
 | AI Console | 1.1.0 | Console window, capture, AI bridge files, agent setup, commands, settings page |
-| ULog | 1.0.0 | `ULog`, `LogChannel`, `LogRecord`, build-stripping defines |
+| ULog | 1.1.0 | `ULog`, `LogChannel`, `LogTag`, `LogRecord`, build-stripping defines |
 | [Button] | 2.0.0 | `ButtonAttribute` and the inspector that draws it |
 | Scene Switcher | 2.0.0 | `Ctrl+Q` / `Ctrl+W` overlay |
 | Inspector Lock | 1.0.1 | `Ctrl+E` |

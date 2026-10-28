@@ -22,6 +22,7 @@
     --aic-rail-on-hover: rgba(255, 255, 255, 0.15);
     --aic-rail-press: rgba(255, 255, 255, 0.18);
     --aic-badge-text: #0e1117;
+    --aic-row-line: rgba(255, 255, 255, 0.04);
 }
 
 .aic--light {
@@ -46,6 +47,7 @@
     --aic-rail-on-hover: rgba(0, 0, 0, 0.12);
     --aic-rail-press: rgba(0, 0, 0, 0.15);
     --aic-badge-text: #ffffff;
+    --aic-row-line: rgba(0, 0, 0, 0.06);
 }
 
 /* ---------- Layout ---------- */
@@ -788,6 +790,8 @@
     flex-grow: 1;
     height: 100%;
     padding-right: 8px;
+    border-bottom-width: 1px;
+    border-color: var(--aic-row-line);
 }
 
 .aic-row:hover {
@@ -817,30 +821,49 @@
 }
 
 .aic-row__time {
-    width: 82px;
+    width: var(--aic-time-w);
     flex-shrink: 0;
-    font-size: var(--aic-fs-sm);
+    font-size: var(--aic-fs);
     color: var(--aic-dim);
+    -unity-text-align: middle-left;
+    overflow: hidden;
     padding: 0;
-    margin: 0;
+    margin: 0 8px 0 0;
+}
+
+/* Tag column: fixed width (set from code for the rows shown) so messages line up. */
+.aic-row__tags {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    overflow: hidden;
+    margin: 0 10px 0 0;
 }
 
 .aic-row__system {
-    flex-shrink: 0;
-    max-width: 120px;
-    font-size: var(--aic-fs-xs);
+    flex-shrink: 1;
+    max-width: 180px;
+    font-size: var(--aic-fs-sm);
     -unity-font-style: bold;
+    -unity-text-align: middle-center;
     padding: 1px 6px;
-    margin: 0 6px 0 0;
-    border-radius: 3px;
+    margin: 0 4px 0 0;
+    border-radius: 4px;
     overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.aic-row__file {
-    max-width: 220px;
+.aic-row__loc {
+    flex-shrink: 0;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--aic-fs-sm);
     color: var(--aic-accent);
-    background-color: var(--aic-raised);
-    -unity-font-style: normal;
+    padding: 0;
+    margin: 0 0 0 10px;
 }
 
 .aic-row__msg {
@@ -864,14 +887,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--aic-dim);
-    font-size: var(--aic-fs-sm);
-    margin: 0 0 0 8px;
+    font-size: var(--aic-fs);
+    margin: 0 0 0 10px;
     padding: 0;
 }
 
 .aic-row__badge {
     flex-shrink: 0;
-    font-size: var(--aic-fs-xs);
+    font-size: var(--aic-fs-sm);
     -unity-font-style: bold;
     color: var(--aic-text);
     background-color: var(--aic-raised);
@@ -882,9 +905,9 @@
 
 .aic-row__id {
     flex-shrink: 0;
-    width: 52px;
+    width: var(--aic-id-w);
     -unity-text-align: middle-right;
-    font-size: var(--aic-fs-xs);
+    font-size: var(--aic-fs-sm);
     color: var(--aic-faint);
     padding: 0;
     margin: 0;
@@ -1114,14 +1137,16 @@
     --aic-rail-w: 40px;
     --aic-rail-w-exp: 172px;
     --aic-chip-h: 22px;
+    --aic-time-w: 94px;
+    --aic-id-w: 52px;
 }
 
-.aic--fs-0 { --aic-fs: 11px; --aic-fs-sm: 10px; --aic-fs-xs: 9px;  --aic-fs-lg: 12px; --aic-rail-btn: 28px; --aic-rail-icon: 16px; --aic-rail-w: 36px; --aic-rail-w-exp: 150px; --aic-chip-h: 20px; }
-.aic--fs-1 { --aic-fs: 12px; --aic-fs-sm: 11px; --aic-fs-xs: 10px; --aic-fs-lg: 13px; --aic-rail-btn: 30px; --aic-rail-icon: 17px; --aic-rail-w: 38px; --aic-rail-w-exp: 160px; --aic-chip-h: 21px; }
-.aic--fs-2 { --aic-fs: 13px; --aic-fs-sm: 12px; --aic-fs-xs: 10px; --aic-fs-lg: 15px; --aic-rail-btn: 32px; --aic-rail-icon: 18px; --aic-rail-w: 40px; --aic-rail-w-exp: 172px; --aic-chip-h: 22px; }
-.aic--fs-3 { --aic-fs: 14px; --aic-fs-sm: 12px; --aic-fs-xs: 11px; --aic-fs-lg: 16px; --aic-rail-btn: 34px; --aic-rail-icon: 20px; --aic-rail-w: 42px; --aic-rail-w-exp: 184px; --aic-chip-h: 24px; }
-.aic--fs-4 { --aic-fs: 16px; --aic-fs-sm: 14px; --aic-fs-xs: 12px; --aic-fs-lg: 18px; --aic-rail-btn: 38px; --aic-rail-icon: 22px; --aic-rail-w: 46px; --aic-rail-w-exp: 204px; --aic-chip-h: 26px; }
-.aic--fs-5 { --aic-fs: 18px; --aic-fs-sm: 15px; --aic-fs-xs: 13px; --aic-fs-lg: 20px; --aic-rail-btn: 42px; --aic-rail-icon: 24px; --aic-rail-w: 50px; --aic-rail-w-exp: 224px; --aic-chip-h: 28px; }
+.aic--fs-0 { --aic-fs: 11px; --aic-fs-sm: 10px; --aic-fs-xs: 9px;  --aic-fs-lg: 12px; --aic-rail-btn: 28px; --aic-rail-icon: 16px; --aic-rail-w: 36px; --aic-rail-w-exp: 150px; --aic-chip-h: 20px; --aic-time-w: 81px; --aic-id-w: 44px; }
+.aic--fs-1 { --aic-fs: 12px; --aic-fs-sm: 11px; --aic-fs-xs: 10px; --aic-fs-lg: 13px; --aic-rail-btn: 30px; --aic-rail-icon: 17px; --aic-rail-w: 38px; --aic-rail-w-exp: 160px; --aic-chip-h: 21px; --aic-time-w: 87px; --aic-id-w: 48px; }
+.aic--fs-2 { --aic-fs: 13px; --aic-fs-sm: 12px; --aic-fs-xs: 10px; --aic-fs-lg: 15px; --aic-rail-btn: 32px; --aic-rail-icon: 18px; --aic-rail-w: 40px; --aic-rail-w-exp: 172px; --aic-chip-h: 22px; --aic-time-w: 94px; --aic-id-w: 52px; }
+.aic--fs-3 { --aic-fs: 14px; --aic-fs-sm: 12px; --aic-fs-xs: 11px; --aic-fs-lg: 16px; --aic-rail-btn: 34px; --aic-rail-icon: 20px; --aic-rail-w: 42px; --aic-rail-w-exp: 184px; --aic-chip-h: 24px; --aic-time-w: 100px; --aic-id-w: 52px; }
+.aic--fs-4 { --aic-fs: 16px; --aic-fs-sm: 14px; --aic-fs-xs: 12px; --aic-fs-lg: 18px; --aic-rail-btn: 38px; --aic-rail-icon: 22px; --aic-rail-w: 46px; --aic-rail-w-exp: 204px; --aic-chip-h: 26px; --aic-time-w: 114px; --aic-id-w: 58px; }
+.aic--fs-5 { --aic-fs: 18px; --aic-fs-sm: 15px; --aic-fs-xs: 13px; --aic-fs-lg: 20px; --aic-rail-btn: 42px; --aic-rail-icon: 24px; --aic-rail-w: 50px; --aic-rail-w-exp: 224px; --aic-chip-h: 28px; --aic-time-w: 127px; --aic-id-w: 62px; }
 
 /* Text that used the editor default now follows the text size too */
 .aic-row__msg,
@@ -1133,8 +1158,7 @@
 .aic-banner__title,
 .aic-banner__text,
 .aic-empty,
-.aic-d-actions > Button,
-.aic-tag-editor__label {
+.aic-d-actions > Button {
     font-size: var(--aic-fs);
 }
 
@@ -1224,70 +1248,10 @@
     color: var(--aic-text);
 }
 
-/* ---------- Tag editor ---------- */
-.aic-tag-editor {
-    padding: 8px 10px 10px 10px;
-    border-top-width: 1px;
-    border-color: var(--aic-border);
-    background-color: var(--aic-raised);
-}
-
-.aic-tag-editor__add {
-    flex-direction: row;
-    align-items: center;
-    margin-bottom: 8px;
-}
-
-.aic-tag-editor__hint {
-    font-size: var(--aic-fs-sm);
-    color: var(--aic-dim);
-    margin-right: 6px;
-    padding: 0;
-}
-
-.aic-tag-editor__name-field {
-    width: 180px;
-    margin: 0 6px 0 0;
-}
-
-.aic-tag-editor__color {
-    width: 56px;
-    margin: 0 8px 0 0;
-    flex-shrink: 0;
-}
-
-.aic-tag-editor__rows {
-    flex-direction: row;
-    flex-wrap: wrap;
-}
-
-.aic-tag-editor__row {
-    flex-direction: row;
-    align-items: center;
-    width: 300px;
-    margin: 2px 14px 2px 0;
-}
-
-.aic-tag-editor__label {
-    width: 120px;
-    padding: 0;
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.aic-tag-editor__count {
-    width: 64px;
-    font-size: var(--aic-fs-xs);
-    color: var(--aic-dim);
-    padding: 0;
-    margin: 0;
-}
-
 /* ---------- Row tags ---------- */
 .aic-row__more {
     flex-shrink: 0;
-    font-size: var(--aic-fs-xs);
+    font-size: var(--aic-fs-sm);
     color: var(--aic-dim);
     padding: 0;
     margin: 0 6px 0 0;
@@ -1303,4 +1267,59 @@
     -unity-font-style: italic;
     padding: 2px 0;
     margin: 0;
+}
+
+/* ---------- Tags bar chips ---------- */
+.aic-tagchip {
+    flex-direction: row;
+    align-items: center;
+    height: var(--aic-chip-h);
+    padding: 0 7px;
+    margin: 0 5px 4px 0;
+    border-radius: 4px;
+    border-width: 1px;
+    border-color: rgba(0, 0, 0, 0);
+}
+
+.aic-tagchip:hover {
+    border-color: var(--aic-dim);
+}
+
+.aic-tagchip--dim {
+    opacity: 0.5;
+}
+
+.aic-tagchip--dim:hover {
+    opacity: 0.85;
+}
+
+.aic-tagchip--empty {
+    opacity: 0.55;
+}
+
+.aic-tagchip--off .aic-tagchip__label {
+    -unity-font-style: bold-and-italic;
+}
+
+.aic-tagchip__label {
+    font-size: var(--aic-fs-sm);
+    -unity-font-style: bold;
+    padding: 0;
+    margin: 0;
+}
+
+.aic-tagchip__count {
+    font-size: var(--aic-fs-xs);
+    padding: 0;
+    margin: 0 0 0 6px;
+}
+
+.aic-tagchip__errors {
+    font-size: var(--aic-fs-xs);
+    -unity-font-style: bold;
+    color: #ffffff;
+    background-color: var(--aic-error);
+    border-radius: 7px;
+    padding: 0 5px;
+    margin: 0 0 0 5px;
 }

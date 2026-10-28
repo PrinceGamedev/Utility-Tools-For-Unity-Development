@@ -23,7 +23,7 @@ namespace UtilityTools.AIConsole
     internal static class AgentBlock
     {
         /// <summary>Bump when the section's wording changes; installed sections then show as outdated.</summary>
-        internal const int Version = 1;
+        internal const int Version = 2;
 
         internal const string BeginPrefix = "<!-- utilitytools:ai-console:begin";
         internal const string End = "<!-- utilitytools:ai-console:end -->";
@@ -56,7 +56,8 @@ f={f}; printf 'refresh\n' > $f/commands.txt; for i in $(seq 120); do [ ! -e $f/c
 - Check behaviour: `clear`, `play`, `wait 5`, `stop`, then `errors.md` or grep `session.jsonl`.
 - Need the user (reproduce a bug, click something, set up a scene)? Send `ask <short instruction>` and say so in chat. It appears in the AI Console with Done / Can't buttons; the result lists the log ids written meanwhile. Re-run the wait loop until it is answered.
 - commands.txt not picked up within ~10 s: Unity is closed, busy or throttled in the background. Ask the user to click the Unity window.
-- Logging in new code (`using UtilityTools.Logging;`, stripped from release builds): `static readonly LogChannel Log = new LogChannel(""Spawner"", ""#4FC3F7"");` then `Log.Info(""Spawned"", (""count"", n));` or `Log.Tagged(""UI"").Warning(""…"");`.
+- Logging in new code (`using UtilityTools.Logging;`, stripped from release builds): `static readonly LogChannel Log = new LogChannel(""Spawner"", ""#4FC3F7"");` then `Log.Info(""Spawned"", (""count"", n));`.
+- Tags are defined once with their colour in the project's static class of `LogTag`s (e.g. `public static readonly LogTag UI = new LogTag(""UI"", ""#4FC3F7"");`). Reuse them — `Debug.Log($""{{Tags.UI}} Opened"")` or `Log.Tagged(Tags.UI).Info(""…"")` — and add new tags to that class instead of typing ad-hoc `[Tag]` strings.
 
 Full reference: `{f}/AI-README.md`.
 " + End + "\n";

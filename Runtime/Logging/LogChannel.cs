@@ -74,6 +74,9 @@ namespace UtilityTools.Logging
         /// </summary>
         public TaggedLog Tagged(params string[] tags) => new TaggedLog(this, tags);
 
+        /// <summary>Adds tags defined in code: <c>Spawn.Tagged(Tags.UI, Tags.Boss).Info("Opened")</c>.</summary>
+        public TaggedLog Tagged(params LogTag[] tags) => new TaggedLog(this, LogTag.Names(tags));
+
         // ---------- Verbose ----------
         [HideInCallstack, Conditional(Editor), Conditional(DevBuild), Conditional(ForceLogs)]
         public void Verbose(string message, params (string key, object value)[] fields)

@@ -643,6 +643,7 @@ namespace UtilityTools.AIConsole
             for (int i = 0; i < TextSizes.Length; i++) root.EnableInClassList("aic--fs-" + i, i == User.textSize);
             if (_list != null)
             {
+                _tagColumnWidth = TagColumnWidth();
                 _list.fixedItemHeight = RowHeight;
                 _list.RefreshItems();
             }
@@ -883,10 +884,9 @@ namespace UtilityTools.AIConsole
 
         // ---------- Tags bar ----------
         // Every log can carry several tags (its ULog system + [UI][Boss] prefixes + Tagged(...)).
-        // Chips filter by one or more tags (Any / All), colours are edited in place, choices are remembered.
-        private VisualElement _tagsRow, _tagEditor, _tagEditorRows;
-        private Label _tagsTitle, _matchAny, _matchAll, _tagsClear, _tagsEdit;
-        private string _tagEditorSignature = "";
+        // Tags and their colours are defined in code (LogTag); chips filter by one or more tags (Any / All).
+        private VisualElement _tagsRow;
+        private Label _tagsTitle, _matchAny, _matchAll, _tagsClear;
 
         private VisualElement BuildSystems()
         {
@@ -933,22 +933,6 @@ namespace UtilityTools.AIConsole
                 SaveTagFilter();
             }));
             controls.Add(_tagsClear);
-
-            _tagsEdit = new Label("Edit tags") { tooltip = "Add tags and pick their colours (shared with the team)" };
-            _tagsEdit.AddToClassList("aic-link");
-            _tagsEdit.AddManipulator(new Clickable(() =>
-            {
-                User.tagEditorOpen = !User.tagEditorOpen;
-                SaveUser();
-                _tagEditorSignature = "";
-                _systemsSignature = "";
-                MarkDirty();
-            }));
-            controls.Add(_tagsEdit);
-
-            _tagEditor = new VisualElement();
-            _tagEditor.AddToClassList("aic-tag-editor");
-            _systems.Add(_tagEditor);
             return _systems;
         }
 
@@ -986,13 +970,13 @@ namespace UtilityTools.AIConsole
             return arrow;
         }
 
-        /// <summary>Tags with logs, custom tags (even unused), and switched-off systems.</summary>
+        /// <summary>Tags with logs, tags defined in code (even unused), switched-off systems, selected tags.</summary>
         private List<string> TagNames()
         {
             var names = new List<string>(_systemCounts.Keys);
             var seen = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
-            foreach (var t in ConsoleProjectSettings.instance.tags)
-                if (!string.IsNullOrEmpty(t.name) && seen.Add(t.name)) names.Add(t.name);
+            foreach (var t in LogTag.All)
+                if (seen.Add(t.Name)) names.Add(t.Name);
             foreach (var ch in LogChannel.All)
                 if (ch != ULog.Default && !ch.Enabled && seen.Add(ch.Name)) names.Add(ch.Name);
             foreach (var t in _systemFilter)
@@ -1015,11 +999,9 @@ namespace UtilityTools.AIConsole
                     .Append(IsChannelOff(n) ? 'x' : 'o').Append(ChannelConfig.ColorFor(n)).Append('|');
             }
 
-            sig.Append(User.systemsOpen).Append(User.tagMatchAll).Append(User.tagEditorOpen);
+            sig.Append(User.systemsOpen).Append(User.tagMatchAll);
             string signature = sig.ToString();
-            // Always shown, so tags can be added (Edit tags) before any log uses them.
             _systems.style.display = DisplayStyle.Flex;
-            UpdateTagEditor(names);
             if (signature == _systemsSignature) return;
             _systemsSignature = signature;
 
@@ -1034,14 +1016,13 @@ namespace UtilityTools.AIConsole
             _matchAny.EnableInClassList("aic-seg__btn--on", !User.tagMatchAll);
             _matchAll.EnableInClassList("aic-seg__btn--on", User.tagMatchAll);
             _tagsClear.EnableInClassList("aic-hidden", !open || _systemFilter.Count == 0);
-            _tagsEdit.EnableInClassList("aic-hidden", !open);
-            _tagsEdit.EnableInClassList("aic-link--on", User.tagEditorOpen);
 
             _systemsChips.Clear();
             if (!open) return;
             if (names.Count == 0)
             {
-                var hint = new Label("No tags yet — write logs as [UI] text or Spawn.Tagged(\"UI\"), or add one with Edit tags.");
+                var hint = new Label("No tags yet. Define them once in code — public static readonly LogTag UI = new LogTag(\"UI\", \"#4FC3F7\"); — " +
+                                     "and log with $\"{Tags.UI} Opened\" or Log.Tagged(Tags.UI).Info(…).");
                 hint.AddToClassList("aic-tags__hint");
                 _systemsChips.Add(hint);
                 return;
@@ -1050,44 +1031,51 @@ namespace UtilityTools.AIConsole
             foreach (var n in names) _systemsChips.Add(MakeChip(n));
         }
 
+        /// <summary>A tag chip in the same style as the tags on log rows: the tag's colour, click to filter.</summary>
         private VisualElement MakeChip(string tag)
         {
             _systemCounts.TryGetValue(tag, out int count);
             _systemErrors.TryGetValue(tag, out int errors);
             bool off = IsChannelOff(tag);
             bool selected = _systemFilter.Contains(tag);
+            var color = ParseColor(ChannelConfig.ColorFor(tag));
 
+            string where = LogTagDiscovery.Declarations.TryGetValue(tag, out var decl) ? "\nDefined in code: " + decl : "";
             var chip = new VisualElement
             {
-                tooltip = off ? tag + " is switched off (only errors are logged)"
-                    : selected ? "Click to remove " + tag + " from the filter"
-                    : "Click to filter by " + tag + " (click more tags to combine)"
+                tooltip = (off ? tag + " is switched off (only errors are logged)"
+                              : selected ? "Click to remove " + tag + " from the filter"
+                              : "Click to show " + tag + " logs (click more tags to combine)") +
+                          $"\n{count} log(s)" + (errors > 0 ? $", {errors} error(s)" : "") + where
             };
-            chip.AddToClassList("aic-chip");
-            chip.EnableInClassList("aic-chip--selected", selected);
-            chip.EnableInClassList("aic-chip--off", off);
+            chip.AddToClassList("aic-tagchip");
+            chip.EnableInClassList("aic-tagchip--selected", selected);
+            chip.EnableInClassList("aic-tagchip--dim", !selected && _systemFilter.Count > 0);
+            chip.EnableInClassList("aic-tagchip--empty", count == 0);
+            chip.EnableInClassList("aic-tagchip--off", off);
 
-            var color = ParseColor(ChannelConfig.ColorFor(tag));
+            Color text = selected ? ReadableOn(color) : color;
+            chip.style.backgroundColor = selected ? color : new Color(color.r, color.g, color.b, 0.16f);
             if (selected)
-            {
                 chip.style.borderTopColor = chip.style.borderBottomColor = chip.style.borderLeftColor =
                     chip.style.borderRightColor = color;
-                chip.style.backgroundColor = new Color(color.r, color.g, color.b, 0.22f);
-            }
-
-            var dot = new VisualElement();
-            dot.AddToClassList("aic-chip__dot");
-            dot.style.backgroundColor = color;
-            chip.Add(dot);
 
             var label = new Label(tag);
-            label.AddToClassList("aic-chip__label");
+            label.AddToClassList("aic-tagchip__label");
+            label.style.color = text;
             chip.Add(label);
 
-            var countLabel = new Label(errors > 0 ? $"{count} · {errors}⛔" : count.ToString(CultureInfo.InvariantCulture));
-            countLabel.AddToClassList("aic-chip__count");
-            countLabel.EnableInClassList("aic-chip__count--error", errors > 0);
+            var countLabel = new Label(count.ToString(CultureInfo.InvariantCulture));
+            countLabel.AddToClassList("aic-tagchip__count");
+            countLabel.style.color = new Color(text.r, text.g, text.b, 0.7f);
             chip.Add(countLabel);
+
+            if (errors > 0)
+            {
+                var err = new Label(errors.ToString(CultureInfo.InvariantCulture));
+                err.AddToClassList("aic-tagchip__errors");
+                chip.Add(err);
+            }
 
             chip.AddManipulator(new Clickable(() =>
             {
@@ -1115,108 +1103,15 @@ namespace UtilityTools.AIConsole
                     evt.menu.AppendAction("Force on for me", _ => SetOverride(tag, ChannelOverride.On), _ => Check(mode == ChannelOverride.On));
                     evt.menu.AppendAction("Use project setting", _ => SetOverride(tag, ChannelOverride.Default), _ => Check(mode == ChannelOverride.Default));
                 }
-
-                evt.menu.AppendSeparator();
-                evt.menu.AppendAction("Edit tag colours…", _ =>
-                {
-                    User.tagEditorOpen = true;
-                    SaveUser();
-                    _tagEditorSignature = "";
-                    _systemsSignature = "";
-                    MarkDirty();
-                });
             }));
             return chip;
         }
 
-        // ---------- Tag editor (inline) ----------
-        private void UpdateTagEditor(List<string> names)
+        /// <summary>Dark or white text, whichever reads better on <paramref name="background"/>.</summary>
+        private static Color ReadableOn(Color background)
         {
-            bool open = User.tagEditorOpen && User.systemsOpen;
-            _tagEditor.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
-            if (!open) return;
-
-            // Rebuilt only when the set of tags changes — never while a colour picker is in use.
-            string signature = string.Join("|", names);
-            if (signature == _tagEditorSignature) return;
-            _tagEditorSignature = signature;
-            _tagEditor.Clear();
-
-            var add = new VisualElement();
-            add.AddToClassList("aic-tag-editor__add");
-            var newName = new TextField { tooltip = "Tag name, e.g. UI — logs written as [UI] text, or Tagged(\"UI\")" };
-            newName.AddToClassList("aic-tag-editor__name-field");
-            var newColor = new ColorField { value = new Color(0.35f, 0.63f, 1f), showAlpha = false, showEyeDropper = false };
-            newColor.AddToClassList("aic-tag-editor__color");
-            var addButton = new Button(() =>
-            {
-                string n = newName.value?.Trim().Trim('[', ']');
-                if (string.IsNullOrEmpty(n)) return;
-                var project = ConsoleProjectSettings.instance;
-                project.SetTagColor(n, "#" + ColorUtility.ToHtmlStringRGB(newColor.value));
-                project.SaveAndNotify();
-                newName.value = "";
-                _tagEditorSignature = "";
-                MarkDirty();
-            }) { text = "Add tag" };
-            var hint = new Label("New tag");
-            hint.AddToClassList("aic-tag-editor__hint");
-            add.Add(hint);
-            add.Add(newName);
-            add.Add(newColor);
-            add.Add(addButton);
-            _tagEditor.Add(add);
-
-            _tagEditorRows = new VisualElement();
-            _tagEditorRows.AddToClassList("aic-tag-editor__rows");
-            _tagEditor.Add(_tagEditorRows);
-
-            foreach (var n in names)
-            {
-                string tag = n;
-                var row = new VisualElement();
-                row.AddToClassList("aic-tag-editor__row");
-
-                ColorUtility.TryParseHtmlString(ChannelConfig.ColorFor(tag), out var c);
-                var color = new ColorField { value = c, showAlpha = false, showEyeDropper = false, tooltip = "Colour of " + tag };
-                color.AddToClassList("aic-tag-editor__color");
-                color.RegisterValueChangedCallback(e =>
-                {
-                    var project = ConsoleProjectSettings.instance;
-                    project.SetTagColor(tag, "#" + ColorUtility.ToHtmlStringRGB(e.newValue));
-                    project.SaveAndNotify();
-                    _systemsSignature = "";
-                    MarkDirty();
-                });
-                row.Add(color);
-
-                var name = new Label(tag);
-                name.AddToClassList("aic-tag-editor__label");
-                row.Add(name);
-
-                _systemCounts.TryGetValue(tag, out int count);
-                var cnt = new Label(count + (count == 1 ? " log" : " logs"));
-                cnt.AddToClassList("aic-tag-editor__count");
-                row.Add(cnt);
-
-                if (ConsoleProjectSettings.instance.FindTag(tag) != null)
-                {
-                    var reset = new Label("Remove") { tooltip = "Remove the custom colour (and the tag, if no logs use it)" };
-                    reset.AddToClassList("aic-link");
-                    reset.AddManipulator(new Clickable(() =>
-                    {
-                        var project = ConsoleProjectSettings.instance;
-                        project.tags.RemoveAll(t => string.Equals(t.name, tag, StringComparison.OrdinalIgnoreCase));
-                        project.SaveAndNotify();
-                        _tagEditorSignature = "";
-                        _systemsSignature = "";
-                        MarkDirty();
-                    }));
-                    row.Add(reset);
-                }
-
-                _tagEditorRows.Add(row);
-            }
+            float luminance = 0.2126f * background.r + 0.7152f * background.g + 0.0722f * background.b;
+            return luminance > 0.55f ? new Color(0.06f, 0.07f, 0.09f) : Color.white;
         }
 
         private static bool IsChannel(string name)
@@ -1352,14 +1247,53 @@ namespace UtilityTools.AIConsole
         // ---------- List ----------
         private sealed class RowView
         {
-            public VisualElement Root, Strip, RuleLeft, RuleRight;
+            public VisualElement Root, Strip, Tags, RuleLeft, RuleRight;
             public Image Icon;
-            public Label Time, System, Message, Fields, Badge, Id, MoreTags;
+            public Label Time, System, Message, Fields, Location, Badge, Id, MoreTags;
             public Label[] TagChips; // System + 2 more tag chips; the rest is "+n"
             public ConsoleEntry Entry;
         }
 
         private const int MaxRowTags = 3;
+
+        // Chip font size per text size step (matches --aic-fs-sm in the USS).
+        private static readonly int[] ChipFontSizes = { 10, 11, 12, 12, 14, 15 };
+        private float _tagColumnWidth;
+
+        /// <summary>
+        /// Width of the tag column: wide enough for the widest tag set among the rows shown (up to
+        /// <see cref="MaxRowTags"/> chips and "+n"), capped so the message keeps most of the row.
+        /// </summary>
+        private float TagColumnWidth()
+        {
+            float font = ChipFontSizes[Mathf.Clamp(User.textSize, 0, ChipFontSizes.Length - 1)];
+            float charW = font * 0.66f;
+            const float chip = 12f + 4f; // padding + gap
+            float max = 0;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var e in _rows)
+            {
+                if (e.kind == EntryKind.Marker) continue;
+                string key = e.TagsText;
+                if (string.IsNullOrEmpty(key) || !seen.Add(key)) continue;
+                float w = 0;
+                int shown = 0, total = 0;
+                foreach (var t in e.AllTags)
+                {
+                    total++;
+                    if (shown >= MaxRowTags) continue;
+                    shown++;
+                    w += t.Length * charW + chip;
+                }
+
+                if (total > shown) w += 3 * charW + 6;
+
+                if (w > max) max = w;
+            }
+
+            return max <= 0 ? 0 : Mathf.Ceil(Mathf.Min(max, 300f * font / 12f));
+        }
 
         private VisualElement BuildList()
         {
@@ -1393,19 +1327,27 @@ namespace UtilityTools.AIConsole
             v.Strip = Add<VisualElement>(v.Root, "aic-row__strip");
             v.Icon = Add<Image>(v.Root, "aic-row__icon");
             v.Time = Add<Label>(v.Root, "aic-row__time");
-            v.System = Add<Label>(v.Root, "aic-row__system");
+            // Fixed-width tag column (width set per rebuild) so every message starts at the same x.
+            v.Tags = Add<VisualElement>(v.Root, "aic-row__tags");
+            v.System = Add<Label>(v.Tags, "aic-row__system");
             v.TagChips = new Label[MaxRowTags];
             v.TagChips[0] = v.System;
-            for (int i = 1; i < MaxRowTags; i++) v.TagChips[i] = Add<Label>(v.Root, "aic-row__system");
-            v.MoreTags = Add<Label>(v.Root, "aic-row__more");
+            for (int i = 1; i < MaxRowTags; i++) v.TagChips[i] = Add<Label>(v.Tags, "aic-row__system");
+            v.MoreTags = Add<Label>(v.Tags, "aic-row__more");
             v.RuleLeft = Add<VisualElement>(v.Root, "aic-row__rule");
             v.Message = Add<Label>(v.Root, "aic-row__msg");
             v.RuleRight = Add<VisualElement>(v.Root, "aic-row__rule");
             v.Fields = Add<Label>(v.Root, "aic-row__fields");
+            v.Location = Add<Label>(v.Root, "aic-row__loc"); // compile messages: "File.cs:12" on the right
             v.Badge = Add<Label>(v.Root, "aic-row__badge");
             v.Id = Add<Label>(v.Root, "aic-row__id");
             v.Message.enableRichText = false;
             v.Fields.enableRichText = false;
+            if (s_HasMonoFont)
+            {
+                v.Time.style.unityFontDefinition = s_MonoFont;
+                v.Id.style.unityFontDefinition = s_MonoFont;
+            }
 
             v.Root.AddManipulator(new ContextualMenuManipulator(evt => FillRowMenu(evt.menu, v.Entry)));
             return v.Root;
@@ -1431,6 +1373,8 @@ namespace UtilityTools.AIConsole
             v.Root.EnableInClassList("aic-row--marker", marker);
             v.Root.EnableInClassList("aic-row--pinned", e.IsCompile);
 
+            v.Tags.EnableInClassList("aic-hidden", marker || _tagColumnWidth <= 0);
+            v.Tags.style.width = _tagColumnWidth;
             v.RuleLeft.EnableInClassList("aic-hidden", !marker);
             v.RuleRight.EnableInClassList("aic-hidden", !marker);
             v.Icon.EnableInClassList("aic-hidden", marker);
@@ -1463,24 +1407,20 @@ namespace UtilityTools.AIConsole
             for (int i = 0; i < MaxRowTags; i++) v.TagChips[i].EnableInClassList("aic-hidden", i >= shown);
             v.MoreTags.text = "+" + (total - shown).ToString(CultureInfo.InvariantCulture);
             v.MoreTags.EnableInClassList("aic-hidden", total <= shown);
-            v.System.RemoveFromClassList("aic-row__file");
-
-            if (e.IsCompile && e.file != null)
+            bool located = e.IsCompile && e.file != null;
+            if (located)
             {
-                // "GA_Menu.cs:33" chip + the message without its long path prefix (full path is in details).
-                v.System.text = Path.GetFileName(e.file) + ":" + e.line.ToString(CultureInfo.InvariantCulture);
-                v.System.style.color = StyleKeyword.Null;
-                v.System.style.backgroundColor = StyleKeyword.Null;
-                v.System.AddToClassList("aic-row__file");
-                v.System.RemoveFromClassList("aic-hidden");
-                v.System.tooltip = $"{e.file}:{e.line}:{e.column}";
+                // Message without its long path prefix; "GA_Menu.cs:33" on the right (full path in the tooltip).
+                v.Location.text = Path.GetFileName(e.file) + ":" + e.line.ToString(CultureInfo.InvariantCulture);
+                v.Location.tooltip = $"{e.file}:{e.line}:{e.column}";
                 v.Message.text = AIFormat.CompilerText(e);
             }
             else
             {
-                v.System.tooltip = null;
                 v.Message.text = e.FirstLine;
             }
+
+            v.Location.EnableInClassList("aic-hidden", !located);
 
             if (e.FieldCount > 0 && !marker)
             {
@@ -1546,6 +1486,7 @@ namespace UtilityTools.AIConsole
 
             SortRows(pinned, u.sortMode);
 
+            _tagColumnWidth = TagColumnWidth();
             _list.fixedItemHeight = RowHeight;
             _list.RefreshItems();
             _emptyList.style.display = _rows.Count == 0 ? DisplayStyle.Flex : DisplayStyle.None;
@@ -2050,13 +1991,17 @@ namespace UtilityTools.AIConsole
             row.AddToClassList("aic-frame");
             row.AddToClassList(f.IsSeparator ? "aic-frame--separator" : f.IsUser ? "aic-frame--user" : "aic-frame--engine");
 
-            var method = new Label(f.Method) { enableRichText = false };
+            var method = new Label(f.IsSeparator ? f.Method : StackTraceParser.ShortMethod(f.Method))
+            {
+                enableRichText = false,
+                tooltip = f.IsSeparator ? null : f.Method
+            };
             method.AddToClassList("aic-frame__method");
             row.Add(method);
 
             if (!string.IsNullOrEmpty(f.File))
             {
-                var file = new Label($"{f.File}:{f.Line}") { tooltip = "Open in code editor" };
+                var file = new Label($"{Path.GetFileName(f.File)}:{f.Line}") { tooltip = $"{f.File}:{f.Line}\nClick to open in the code editor" };
                 file.AddToClassList("aic-frame__file");
                 row.Add(file);
                 string path = f.File;

@@ -25,6 +25,20 @@ All notable changes to this package are documented here. Both the package and ea
   note. The answer reports the ids and counts of the logs written meanwhile, and markers bracket the
   request in the log.
 - `status.txt` shows `ask=pending` / `commands=running`; `AI-README.md` documents the commands.
+- **Tags come from code.** The tags bar shows every tag as a coloured chip in the row-tag style, with
+  its log count and error count; tags defined with `LogTag` are listed before they are used. The
+  inline colour editor and *Edit tags* are gone; Project Settings › Tags lists the tags defined in
+  code and where. Colours picked in 1.3.0 still apply until a `LogTag` with the same name exists.
+- **Rows are columns:** time in a monospace font sized to the text size, a tag column with one
+  width for all rows (messages line up), one font size across the row, hairlines between rows, and
+  `File.cs:line` on the right for compile messages.
+- **Stack traces read better:** `Class.Method` and `File.cs:line`; full names and paths in tooltips.
+
+### ULog 1.1.0
+- `LogTag` — a tag with its colour, defined once (`public static readonly LogTag UI = new LogTag("UI",
+  "#4FC3F7");`) and used anywhere: `$"{Tags.UI} Opened"` writes `[UI] Opened`;
+  `Tagged(params LogTag[])` on channels and `ULog`. `LogTag.All`, `LogTag.Find(name)`.
+- Unity's Console uses the `LogTag` colour for tags in rich text.
 
 ## [1.3.0] - 2026-10-28
 

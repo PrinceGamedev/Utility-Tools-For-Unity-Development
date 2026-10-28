@@ -15,7 +15,7 @@ namespace UtilityTools
         public static class Features
         {
             public const string AIConsole = "1.1.0";
-            public const string ULog = "1.0.0";
+            public const string ULog = "1.1.0";
             public const string Button = "2.0.0";
             public const string SceneSwitcher = "2.0.0";
             public const string InspectorLock = "1.0.1";

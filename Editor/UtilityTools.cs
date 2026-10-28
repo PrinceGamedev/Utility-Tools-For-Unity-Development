@@ -1,11 +1,12 @@
+#if UNITY_EDITOR
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEditor.ShortcutManagement;
 using UnityEngine;
-using System.Reflection;
 
 namespace UtilityTools
 {
@@ -66,11 +67,23 @@ namespace UtilityTools
         [MenuItem("Tools/Utility Tools/Scene Switcher UI")]
         static void ShowFromMenu() => ShowOrCreate(0, false);
 
-        // Shortcuts (Ctrl/Cmd + Q/W) – only update; do NOT recreate window
-        [Shortcut("Scenes/Show & Next (Ctrl+Q)", KeyCode.Q, ShortcutModifiers.Action)]
+        // The switcher binds the physical Ctrl key on every platform: on macOS, Action resolves to
+        // Cmd and Cmd+Q quits Unity. ShortcutModifiers.Control only exists from 2022.1, so older
+        // macOS editors fall back to Option (Alt).
+#if UNITY_EDITOR_OSX && UNITY_2022_1_OR_NEWER
+        const ShortcutModifiers SWITCH_MOD = ShortcutModifiers.Control;
+#elif UNITY_EDITOR_OSX
+        const ShortcutModifiers SWITCH_MOD = ShortcutModifiers.Alt;
+#else
+        const ShortcutModifiers SWITCH_MOD = ShortcutModifiers.Action; // = Ctrl on Windows/Linux
+#endif
+
+        // Shortcuts (Ctrl + Q/W) – only update; do NOT recreate window.
+        // IDs are unchanged so existing user rebinds keep working.
+        [Shortcut("Scenes/Show & Next (Ctrl+Q)", KeyCode.Q, SWITCH_MOD)]
         static void ShortcutNext() => ShowOrCreate(+1, true);
 
-        [Shortcut("Scenes/Show & Prev (Ctrl+W)", KeyCode.W, ShortcutModifiers.Action)]
+        [Shortcut("Scenes/Show & Prev (Ctrl+W)", KeyCode.W, SWITCH_MOD)]
         static void ShortcutPrev() => ShowOrCreate(-1, true);
 
         void OnEnable()
@@ -104,8 +117,8 @@ namespace UtilityTools
 
         void OnGUI()
         {
-            // If we opened via shortcut: releasing Ctrl/Cmd should open highlighted scene
-            if (closeOnActionKeyUp && Event.current.type == EventType.KeyUp && IsCtrlOrCmdKeyUp(Event.current))
+            // If we opened via shortcut: releasing the switcher modifier should open highlighted scene
+            if (closeOnActionKeyUp && Event.current.type == EventType.KeyUp && IsSwitchModifierKeyUp(Event.current))
             {
                 if (TryOpenHighlighted()) Close();
                 GUIUtility.ExitGUI();
@@ -118,10 +131,11 @@ namespace UtilityTools
             using (new GUILayout.HorizontalScope())
             {
                 GUILayout.Space(PADDING);
-                GUILayout.Label("Enabled Scenes (Ctrl/Cmd+Q next • Ctrl/Cmd+W prev • Enter open • Esc cancel)", EditorStyles.boldLabel);
+                GUILayout.Label("Enabled Scenes (" + SWITCH_KEY_NAME + "+Q next • " + SWITCH_KEY_NAME +
+                                "+W prev • Enter open • Esc cancel)", EditorStyles.boldLabel);
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button("Build Settings", GUILayout.Height(20)))
-                    EditorWindow.GetWindow(Type.GetType("UnityEditor.BuildPlayerWindow,UnityEditor"));
+                    BuildPlayerWindow.ShowBuildPlayerWindow(); // Build Profiles window on Unity 6
                 GUILayout.Space(PADDING);
             }
             GUILayout.Space(6);
@@ -153,10 +167,16 @@ namespace UtilityTools
             GUILayout.Space(PADDING);
         }
 
-        static bool IsCtrlOrCmdKeyUp(Event e)
+#if UNITY_EDITOR_OSX && !UNITY_2022_1_OR_NEWER
+        const string SWITCH_KEY_NAME = "Option";
+#else
+        const string SWITCH_KEY_NAME = "Ctrl";
+#endif
+
+        static bool IsSwitchModifierKeyUp(Event e)
         {
-#if UNITY_EDITOR_OSX
-        return e.keyCode == KeyCode.LeftCommand || e.keyCode == KeyCode.RightCommand;
+#if UNITY_EDITOR_OSX && !UNITY_2022_1_OR_NEWER
+            return e.keyCode == KeyCode.LeftAlt || e.keyCode == KeyCode.RightAlt;
 #else
             return e.keyCode == KeyCode.LeftControl || e.keyCode == KeyCode.RightControl;
 #endif
@@ -226,27 +246,10 @@ namespace UtilityTools
 
         static void CenterOnMainWin(EditorWindow wnd)
         {
-            var main = GetEditorMainWindowPos();
+            var main = EditorGUIUtility.GetMainWindowPosition();
             var size = new Vector2(WIDTH, Mathf.Min(MAX_HEIGHT, 360f));
             var pos = new Vector2(main.x + (main.width - size.x) * 0.5f, main.y + (main.height - size.y) * 0.3f);
             wnd.position = new Rect(pos, size);
-        }
-
-        static Rect GetEditorMainWindowPos()
-        {
-            var type = Type.GetType("UnityEditor.ContainerWindow,UnityEditor");
-            if (type == null) return new Rect(100, 100, 800, 600);
-
-            var showModeField = type.GetField("m_ShowMode", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var positionProperty = type.GetProperty("position", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-
-            var windows = Resources.FindObjectsOfTypeAll(type);
-            foreach (var win in windows)
-            {
-                int showmode = (int)showModeField.GetValue(win);
-                if (showmode == 4) return (Rect)positionProperty.GetValue(win, null);
-            }
-            return new Rect(100, 100, 800, 600);
         }
 
         static Texture2D MakeTex(int w, int h, Color c)
@@ -261,7 +264,7 @@ namespace UtilityTools
     #endregion
 
     #region Inspector Lock
-    public class InspectorLock : EditorWindow
+    public static class InspectorLock
     {
         [MenuItem("Tools/Utility Tools/Toggle Lock %e")]
         private static void ToggleViaMenu() => ToggleInspectorLock();
@@ -314,8 +317,6 @@ namespace UtilityTools
                 bool current = (bool)isLockedProp.GetValue(win, null);
                 isLockedProp.SetValue(win, !current, null);
                 win.Repaint();
-                // Optional: tell you which one changed
-                // Debug.Log($"Inspector lock → {(!current ? "ON" : "OFF")} ({win.titleContent.text})");
             }
 
             // Make sure everything reflects the new state
@@ -326,9 +327,8 @@ namespace UtilityTools
     #endregion
 
     #region Open Package Manager
-    public class OpenPackageManager : EditorWindow
+    public static class OpenPackageManager
     {
-
         [MenuItem("Tools/Utility Tools/Open Package Manager #x")]
         private static void OpenViaMenu() => OpenPM();
 
@@ -341,16 +341,16 @@ namespace UtilityTools
             // Fallback: try known internal window types across Unity versions
             var candidates = new[]
             {
-            "UnityEditor.PackageManager.UI.Internal.PackageManagerWindow, UnityEditor", // 2020+
-            "UnityEditor.PackageManager.UI.PackageManagerWindow, UnityEditor",          // older
-        };
+                "UnityEditor.PackageManager.UI.Internal.PackageManagerWindow, UnityEditor", // 2020+
+                "UnityEditor.PackageManager.UI.PackageManagerWindow, UnityEditor",          // older
+            };
 
             foreach (var qn in candidates)
             {
                 var t = Type.GetType(qn, throwOnError: false);
                 if (t == null) continue;
 
-                var win = GetWindow(t);  // EditorWindow.GetWindow(Type)
+                var win = EditorWindow.GetWindow(t);
                 if (win != null)
                 {
                     win.Show();
@@ -366,39 +366,34 @@ namespace UtilityTools
     #endregion
 
     #region Open In Explorer
-    public class OpenInExplorer : EditorWindow
+    public static class OpenInExplorer
     {
-        [MenuItem("Tools/Utility Tools/Open In Explorer %#e")] // Ctrl+Shift+E fallback
+        [MenuItem("Tools/Utility Tools/Open In Explorer %#e")] // Ctrl+Shift+E
         private static void OpenViaMenu() => OpenSelected();
 
         private static void OpenSelected()
         {
             string path = null;
 
-            // If something is selected in Project view → open its folder
             var obj = Selection.activeObject;
             if (obj != null)
             {
                 path = AssetDatabase.GetAssetPath(obj);
-                if (!string.IsNullOrEmpty(path))
-                {
-                    path = Path.GetFullPath(path);
-                    if (File.Exists(path))
-                        path = Path.GetDirectoryName(path); // file → folder
-                }
+                if (!string.IsNullOrEmpty(path)) path = Path.GetFullPath(path);
             }
 
-            // If nothing is selected, open project root
-            if (string.IsNullOrEmpty(path))
-                path = Path.GetFullPath(Application.dataPath + "/..");
+            // Selected file → reveal it (opens its folder with the file highlighted)
+            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+            {
+                EditorUtility.RevealInFinder(path);
+                return;
+            }
 
-#if UNITY_EDITOR_WIN
-        System.Diagnostics.Process.Start("explorer.exe", path.Replace("/", "\\"));
-#elif UNITY_EDITOR_OSX
-        System.Diagnostics.Process.Start("open", path);
-#else
-            UnityEngine.Debug.LogWarning("OpenInExplorer not supported on this platform.");
-#endif
+            // Selected folder → open it; nothing selected → open the project root.
+            // A file:// URI opens the folder itself on Windows, macOS and Linux and handles spaces.
+            if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+                path = Path.GetFullPath(Application.dataPath + "/..");
+            Application.OpenURL(new Uri(path).AbsoluteUri);
         }
     }
     #endregion
@@ -414,7 +409,8 @@ namespace UtilityTools
     #region Open Player Settings
     public static class OpenPlayerSettings
     {
-        [MenuItem("Tools/Utility Tools/Open Player Settings %#p")] // Ctrl+Shift+P
+        // Ctrl+Shift+Alt+P — Ctrl+Shift+P is Unity's built-in Pause shortcut.
+        [MenuItem("Tools/Utility Tools/Open Player Settings %#&p")]
         private static void Open() => SettingsService.OpenProjectSettings("Project/Player");
     }
     #endregion
@@ -438,4 +434,5 @@ namespace UtilityTools
     }
     #endregion
 }
+#endif
 

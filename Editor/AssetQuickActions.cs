@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using System.Linq;
 using UnityEditor;
 using UnityEditor.Compilation;
 using UnityEngine;
@@ -6,50 +7,53 @@ using UnityEngine;
 namespace UtilityTools
 {
     /// <summary>
-    /// Small asset/workflow shortcuts: copy the selected asset's GUID or project path to the
-    /// clipboard, force a script recompile, or force-reserialize the selected assets.
+    /// Small asset/workflow shortcuts: copy the selected assets' GUIDs or project paths to the
+    /// clipboard (one per line), force a script recompile, or force-reserialize the selected assets.
     /// </summary>
     public static class AssetQuickActions
     {
+        // Selection.assetGUIDs only contains project assets (incl. folders), never scene objects.
+        private static bool HasAssetSelection() => Selection.assetGUIDs.Length > 0;
+
         // ---------- Copy GUID ----------
         [MenuItem("Assets/Utility Tools/Copy GUID", false, 20)]
         private static void CopyGuid()
         {
-            string path = AssetDatabase.GetAssetPath(Selection.activeObject);
-            string guid = AssetDatabase.AssetPathToGUID(path);
-            EditorGUIUtility.systemCopyBuffer = guid;
-            Debug.Log($"[UtilityTools] Copied GUID: {guid}  ({path})");
+            var guids = Selection.assetGUIDs;
+            EditorGUIUtility.systemCopyBuffer = string.Join("\n", guids);
+            Debug.Log(guids.Length == 1
+                ? $"[UtilityTools] Copied GUID: {guids[0]}  ({AssetDatabase.GUIDToAssetPath(guids[0])})"
+                : $"[UtilityTools] Copied {guids.Length} GUIDs.");
         }
 
         [MenuItem("Assets/Utility Tools/Copy GUID", true)]
-        private static bool CopyGuidValidate() => Selection.activeObject != null;
+        private static bool CopyGuidValidate() => HasAssetSelection();
 
         // ---------- Copy Asset Path ----------
         [MenuItem("Assets/Utility Tools/Copy Asset Path", false, 21)]
         private static void CopyPath()
         {
-            string path = AssetDatabase.GetAssetPath(Selection.activeObject);
-            EditorGUIUtility.systemCopyBuffer = path;
-            Debug.Log($"[UtilityTools] Copied path: {path}");
+            var paths = Selection.assetGUIDs.Select(AssetDatabase.GUIDToAssetPath).ToArray();
+            EditorGUIUtility.systemCopyBuffer = string.Join("\n", paths);
+            Debug.Log(paths.Length == 1
+                ? $"[UtilityTools] Copied path: {paths[0]}"
+                : $"[UtilityTools] Copied {paths.Length} paths.");
         }
 
         [MenuItem("Assets/Utility Tools/Copy Asset Path", true)]
-        private static bool CopyPathValidate() => Selection.activeObject != null;
+        private static bool CopyPathValidate() => HasAssetSelection();
 
         // ---------- Reserialize Selected ----------
         [MenuItem("Assets/Utility Tools/Reserialize Selected", false, 40)]
         private static void ReserializeSelected()
         {
-            var guids = Selection.assetGUIDs;
-            var paths = new string[guids.Length];
-            for (int i = 0; i < guids.Length; i++) paths[i] = AssetDatabase.GUIDToAssetPath(guids[i]);
-
+            var paths = Selection.assetGUIDs.Select(AssetDatabase.GUIDToAssetPath).ToArray();
             AssetDatabase.ForceReserializeAssets(paths);
             Debug.Log($"[UtilityTools] Reserialized {paths.Length} asset(s).");
         }
 
         [MenuItem("Assets/Utility Tools/Reserialize Selected", true)]
-        private static bool ReserializeSelectedValidate() => Selection.assetGUIDs.Length > 0;
+        private static bool ReserializeSelectedValidate() => HasAssetSelection();
 
         // ---------- Force Recompile ----------
         [MenuItem("Tools/Utility Tools/Force Recompile %#r")] // Ctrl+Shift+R

@@ -4,18 +4,39 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEditor;
+using UnityEditor.UIElements;
 using UnityEditorInternal;
 using UnityEngine;
+using UnityEngine.UIElements;
+using Object = UnityEngine.Object;
 
 namespace UtilityTools
 {
+    // Define UTILITYTOOLS_DISABLE_BUTTON_EDITOR to unregister both editors (e.g. when another package such
+    // as Odin or NaughtyAttributes already provides an editor for all objects).
 
-
+    /// <summary>Draws <see cref="ButtonAttribute"/> methods on every MonoBehaviour inspector.</summary>
+#if !UTILITYTOOLS_DISABLE_BUTTON_EDITOR
     [CustomEditor(typeof(MonoBehaviour), true)]
-    public class ButtonMethodEditor : Editor
+    [CanEditMultipleObjects] // applies to every MonoBehaviour, so it must not block multi-selection
+#endif
+    public class ButtonMethodEditor : ButtonEditorBase { }
+
+    /// <summary>Draws <see cref="ButtonAttribute"/> methods on every ScriptableObject inspector.</summary>
+#if !UTILITYTOOLS_DISABLE_BUTTON_EDITOR
+    [CustomEditor(typeof(ScriptableObject), true)]
+    [CanEditMultipleObjects]
+#endif
+    public class ButtonScriptableObjectEditor : ButtonEditorBase { }
+
+    /// <summary>
+    /// Shared [Button] inspector logic. The default inspector is built with UI Toolkit, so UI Toolkit-only
+    /// property drawers keep working.
+    /// </summary>
+    public abstract class ButtonEditorBase : Editor
     {
         // --------- Per-type metadata cache ---------
-        private struct MethodMeta
+        internal struct MethodMeta
         {
             public MethodInfo Method;
             public ButtonAttribute[] Attrs;
@@ -24,13 +45,24 @@ namespace UtilityTools
             public GUIContent[] ParamLabels;
             public bool IsStatic;
             public bool ReturnsValue;     // non-void, non-coroutine return shown under the button
-            public bool ReturnsCoroutine; // IEnumerator -> driven on EditorApplication.update
+            public bool ReturnsCoroutine; // IEnumerator -> StartCoroutine in Play Mode, editor pump otherwise
+            public int Level;             // 0 = most-derived type; higher = further up the hierarchy
         }
 
         private static readonly Dictionary<Type, MethodMeta[]> TypeCache = new Dictionary<Type, MethodMeta[]>();
 
+        // Hierarchy walk stops at these: their methods never carry [Button].
+        private static readonly HashSet<Type> StopTypes = new HashSet<Type>
+        {
+            typeof(object), typeof(Object), typeof(Component), typeof(Behaviour),
+            typeof(MonoBehaviour), typeof(ScriptableObject)
+        };
+
+        // All per-object caches below are keyed by the owner's instance ID ("<id>|..." for string keys)
+        // so PruneDeadCaches can drop entries whose owner was destroyed or unloaded.
+
         // --------- Per-object param values ---------
-        private static readonly Dictionary<int, Dictionary<string, object>> Cache =
+        private static readonly Dictionary<int, Dictionary<string, object>> ParamCache =
             new Dictionary<int, Dictionary<string, object>>();
 
         // --------- Last return value per (object|method) ---------
@@ -44,161 +76,192 @@ namespace UtilityTools
         private static readonly Dictionary<string, GUIContent> LabelCache = new Dictionary<string, GUIContent>(256);
         private static string[] s_LayerNames;
 
+        private const int PruneThreshold = 256;
+
+        private void OnEnable()
+        {
+            if (ParamCache.Count + ResultCache.Count + RLCache.Count + FoldCache.Count > PruneThreshold)
+                PruneDeadCaches();
+        }
+
+        public override VisualElement CreateInspectorGUI()
+        {
+            var root = new VisualElement();
+            bool hasButtons = target && GetMetas(target.GetType()).Length > 0;
+
+            if (hasButtons) root.Add(new IMGUIContainer(() => DrawButtonGroup(ButtonAttribute.Position.Top)));
+            InspectorElement.FillDefaultInspector(root, serializedObject, this);
+            if (hasButtons) root.Add(new IMGUIContainer(() => DrawButtonGroup(ButtonAttribute.Position.Bottom)));
+
+            return root;
+        }
+
+        // IMGUI path, used when this editor is drawn from an IMGUI context (e.g. Editor.OnInspectorGUI calls).
         public override void OnInspectorGUI()
         {
-            var mb = target as MonoBehaviour;
-            if (!mb)
-            {
-                base.OnInspectorGUI();
-                return;
-            }
+            DrawButtonGroup(ButtonAttribute.Position.Top);
+            base.OnInspectorGUI();
+            DrawButtonGroup(ButtonAttribute.Position.Bottom);
+        }
 
-            var t = mb.GetType();
+        // --------- Build per-type metadata once ---------
+        internal static MethodMeta[] GetMetas(Type t)
+        {
             if (!TypeCache.TryGetValue(t, out var metas))
             {
                 metas = BuildTypeCache(t);
                 TypeCache[t] = metas;
             }
 
-            DrawButtonGroup(mb, metas, ButtonAttribute.Position.Top);
-            base.OnInspectorGUI();
-            DrawButtonGroup(mb, metas, ButtonAttribute.Position.Bottom);
-        }
-
-        // --------- Build per-type metadata once ---------
-        private static MethodMeta[] BuildTypeCache(Type t)
-        {
-            var methods = t.GetMethods(
-                BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-
-            int count = 0;
-            for (int i = 0; i < methods.Length; i++)
-                if (methods[i].GetCustomAttributes(typeof(ButtonAttribute), true).Length > 0)
-                    count++;
-
-            var metas = new MethodMeta[count];
-            int idx = 0;
-
-            for (int i = 0; i < methods.Length; i++)
-            {
-                var m = methods[i];
-                var objAttrs = m.GetCustomAttributes(typeof(ButtonAttribute), true);
-                if (objAttrs.Length == 0) continue;
-
-                var attrs = new ButtonAttribute[objAttrs.Length];
-                for (int a = 0; a < objAttrs.Length; a++) attrs[a] = (ButtonAttribute)objAttrs[a];
-
-                var ps = m.GetParameters();
-                var paramLabels = new GUIContent[ps.Length];
-                for (int p = 0; p < ps.Length; p++)
-                    paramLabels[p] = GetLabel(ObjectNames.NicifyVariableName(ps[p].Name));
-
-                metas[idx].Method = m;
-                metas[idx].Attrs = attrs;
-                metas[idx].Params = ps;
-                metas[idx].ParamLabels = paramLabels;
-                metas[idx].NicifiedName = ObjectNames.NicifyVariableName(m.Name);
-                metas[idx].IsStatic = m.IsStatic;
-                metas[idx].ReturnsCoroutine = typeof(IEnumerator).IsAssignableFrom(m.ReturnType);
-                metas[idx].ReturnsValue = m.ReturnType != typeof(void) && !metas[idx].ReturnsCoroutine;
-                idx++;
-            }
-
-            Array.Sort(metas, (a, b) => string.Compare(a.NicifiedName, b.NicifiedName, StringComparison.Ordinal));
             return metas;
         }
 
-  private void DrawButtonGroup(MonoBehaviour mb, MethodMeta[] metas, ButtonAttribute.Position position)
-{
-    // count first
-    int groupCount = 0;
-    for (int i = 0; i < metas.Length; i++)
-        for (int a = 0; a < metas[i].Attrs.Length; a++)
-            if (metas[i].Attrs[a].UiPosition == position && IsVisible(metas[i].Attrs[a])) groupCount++;
-    if (groupCount == 0) return;
-
-    EditorGUILayout.Space(8);
-    DrawHorizontalLine(1);
-    EditorGUILayout.Space(4);
-
-    using (new EditorGUILayout.VerticalScope(new GUIStyle("HelpBox")))
-    {
-        GUILayout.Label(position == ButtonAttribute.Position.Top ? "Actions (Top)" : "Actions", EditorStyles.boldLabel);
-
-        const float kLeftPad = 12f;     // push arrow inside the box
-        const float kRunW    = 60f;
-
-        for (int i = 0; i < metas.Length; i++)
+        // Walks the hierarchy with DeclaredOnly so private base-class methods are found too.
+        // Order: base-class buttons first, then declaration order within each class.
+        internal static MethodMeta[] BuildTypeCache(Type t)
         {
-            var meta = metas[i];
-            var ps   = meta.Params;
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public |
+                                       BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
 
-            for (int a = 0; a < meta.Attrs.Length; a++)
+            var metas = new List<MethodMeta>();
+            var seen = new HashSet<(Module, int)>(); // base definitions already taken (most-derived override wins)
+            int level = 0;
+
+            for (var type = t; type != null && !StopTypes.Contains(type); type = type.BaseType, level++)
             {
-                var attr = meta.Attrs[a];
-                if (attr.UiPosition != position) continue;
-                if (!IsVisible(attr)) continue;
-
-                string labelStr = string.IsNullOrEmpty(attr.Label) ? meta.NicifiedName : attr.Label;
-                var content = GetLabel(labelStr, attr.Tooltip);
-
-                Color prevBg = GUI.backgroundColor;
-                if (TryParseColor(attr.Color, out var tint)) GUI.backgroundColor = tint;
-
-                if (ps.Length == 0)
+                foreach (var m in type.GetMethods(flags))
                 {
-                    if (GUILayout.Button(content, GUILayout.Height(22)) && ConfirmRun(attr, labelStr))
-                        InvokeButton(mb, meta, null);
-                }
-                else
-                {
-                    string foldKey = KeyBase(mb, meta.Method) + "|paramFold";
-                    bool open = GetFold(foldKey, false);
+                    var def = m.GetBaseDefinition();
+                    if (!seen.Add((def.Module, def.MetadataToken))) continue;
 
-                    // measure one row
-                    Rect row = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight);
-                    // pad left so the arrow sits inside the HelpBox edge
-                    row.x += kLeftPad; row.width -= kLeftPad;
+                    // inherit:true also picks up [Button] from an overridden base declaration
+                    var objAttrs = m.GetCustomAttributes(typeof(ButtonAttribute), true);
+                    if (objAttrs.Length == 0) continue;
 
-                    Rect runRect  = new Rect(row.xMax - kRunW, row.y, kRunW, row.height);
-                    Rect foldRect = new Rect(row.x, row.y, row.width - kRunW - 4f, row.height);
-                    foldRect = EditorGUI.IndentedRect(foldRect);
+                    var attrs = new ButtonAttribute[objAttrs.Length];
+                    for (int a = 0; a < objAttrs.Length; a++) attrs[a] = (ButtonAttribute)objAttrs[a];
 
-                    open = EditorGUI.Foldout(foldRect, open, content, true);
-                    SetFold(foldKey, open);
+                    var ps = m.GetParameters();
+                    var paramLabels = new GUIContent[ps.Length];
+                    for (int p = 0; p < ps.Length; p++)
+                        paramLabels[p] = GetLabel(ObjectNames.NicifyVariableName(ps[p].Name));
 
-                    using (new EditorGUI.DisabledScope(!AllParamsHaveValues(mb, meta)))
+                    bool isCoroutine = typeof(IEnumerator).IsAssignableFrom(m.ReturnType);
+                    metas.Add(new MethodMeta
                     {
-                        if (GUI.Button(runRect, "Run") && ConfirmRun(attr, labelStr))
-                        {
-                            var args = BuildArgs(mb, meta);
-                            if (args != null) InvokeButton(mb, meta, args);
-                        }
-                    }
-
-                    if (open)
-                    {
-                        using (new EditorGUILayout.VerticalScope(new GUIStyle("box")))
-                        {
-                            EditorGUI.indentLevel++;
-                            DrawParamsUI(mb, meta);
-                            EditorGUI.indentLevel--;
-                        }
-                    }
+                        Method = m,
+                        Attrs = attrs,
+                        Params = ps,
+                        ParamLabels = paramLabels,
+                        NicifiedName = ObjectNames.NicifyVariableName(m.Name),
+                        IsStatic = m.IsStatic,
+                        ReturnsCoroutine = isCoroutine,
+                        ReturnsValue = m.ReturnType != typeof(void) && !isCoroutine,
+                        Level = level
+                    });
                 }
-
-                GUI.backgroundColor = prevBg;
-
-                DrawResult(mb, meta);
-
-                EditorGUILayout.Space(3);
             }
-        }
-    }
 
-    EditorGUILayout.Space(4);
-    DrawHorizontalLine(1);
-}
+            metas.Sort((a, b) => a.Level != b.Level
+                ? b.Level.CompareTo(a.Level)
+                : a.Method.MetadataToken.CompareTo(b.Method.MetadataToken));
+            return metas.ToArray();
+        }
+
+        private void DrawButtonGroup(ButtonAttribute.Position position)
+        {
+            var owner = target;
+            if (!owner) return;
+            var metas = GetMetas(owner.GetType());
+
+            int groupCount = 0;
+            for (int i = 0; i < metas.Length; i++)
+                for (int a = 0; a < metas[i].Attrs.Length; a++)
+                    if (metas[i].Attrs[a].UiPosition == position && IsVisible(metas[i].Attrs[a])) groupCount++;
+            if (groupCount == 0) return;
+
+            EditorGUILayout.Space(8);
+            DrawHorizontalLine(1);
+            EditorGUILayout.Space(4);
+
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                GUILayout.Label(position == ButtonAttribute.Position.Top ? "Actions (Top)" : "Actions",
+                    EditorStyles.boldLabel);
+
+                const float kLeftPad = 12f; // push arrow inside the box
+                const float kRunW = 60f;
+
+                for (int i = 0; i < metas.Length; i++)
+                {
+                    var meta = metas[i];
+                    var ps = meta.Params;
+
+                    for (int a = 0; a < meta.Attrs.Length; a++)
+                    {
+                        var attr = meta.Attrs[a];
+                        if (attr.UiPosition != position) continue;
+                        if (!IsVisible(attr)) continue;
+
+                        string labelStr = string.IsNullOrEmpty(attr.Label) ? meta.NicifiedName : attr.Label;
+                        var content = GetLabel(labelStr, attr.Tooltip);
+
+                        Color prevBg = GUI.backgroundColor;
+                        if (TryParseColor(attr.Color, out var tint)) GUI.backgroundColor = tint;
+
+                        if (ps.Length == 0)
+                        {
+                            if (GUILayout.Button(content, GUILayout.Height(22)) && ConfirmRun(attr, labelStr))
+                                InvokeOnTargets(owner, meta, null);
+                        }
+                        else
+                        {
+                            string foldKey = KeyBase(owner, meta.Method) + "|paramFold";
+                            bool open = GetFold(foldKey, false);
+
+                            // measure one row
+                            Rect row = EditorGUILayout.GetControlRect(false, EditorGUIUtility.singleLineHeight);
+                            // pad left so the arrow sits inside the HelpBox edge
+                            row.x += kLeftPad;
+                            row.width -= kLeftPad;
+
+                            Rect runRect = new Rect(row.xMax - kRunW, row.y, kRunW, row.height);
+                            Rect foldRect = new Rect(row.x, row.y, row.width - kRunW - 4f, row.height);
+                            foldRect = EditorGUI.IndentedRect(foldRect);
+
+                            open = EditorGUI.Foldout(foldRect, open, content, true);
+                            SetFold(foldKey, open);
+
+                            // Params that were never shown run with their defaults.
+                            if (GUI.Button(runRect, "Run") && ConfirmRun(attr, labelStr))
+                            {
+                                var args = BuildArgs(owner, meta);
+                                if (args != null) InvokeOnTargets(owner, meta, args);
+                            }
+
+                            if (open)
+                            {
+                                using (new EditorGUILayout.VerticalScope(GUI.skin.box))
+                                {
+                                    EditorGUI.indentLevel++;
+                                    DrawParamsUI(owner, meta);
+                                    EditorGUI.indentLevel--;
+                                }
+                            }
+                        }
+
+                        GUI.backgroundColor = prevBg;
+
+                        DrawResult(owner, meta);
+
+                        EditorGUILayout.Space(3);
+                    }
+                }
+            }
+
+            EditorGUILayout.Space(4);
+            DrawHorizontalLine(1);
+        }
 
         // --------- Confirmation + result rendering ---------
         private static bool ConfirmRun(ButtonAttribute attr, string label)
@@ -210,11 +273,11 @@ namespace UtilityTools
             return EditorUtility.DisplayDialog("Confirm Action", msg, "Run", "Cancel");
         }
 
-        private void DrawResult(MonoBehaviour mb, MethodMeta meta)
+        private static void DrawResult(Object owner, MethodMeta meta)
         {
             if (!meta.ReturnsValue) return;
 
-            string key = KeyBase(mb, meta.Method);
+            string key = KeyBase(owner, meta.Method);
             if (!ResultCache.TryGetValue(key, out var result)) return;
 
             using (new EditorGUILayout.HorizontalScope())
@@ -228,13 +291,12 @@ namespace UtilityTools
             }
         }
 
-
         // --------- Helpers ---------
         private static GUIContent GetLabel(string text) => GetLabel(text, null);
 
         private static GUIContent GetLabel(string text, string tooltip)
         {
-            string cacheKey = string.IsNullOrEmpty(tooltip) ? text : text + "" + tooltip;
+            string cacheKey = string.IsNullOrEmpty(tooltip) ? text : text + "\u0001" + tooltip;
             if (!LabelCache.TryGetValue(cacheKey, out var gc))
             {
                 gc = string.IsNullOrEmpty(tooltip) ? new GUIContent(text) : new GUIContent(text, tooltip);
@@ -244,7 +306,7 @@ namespace UtilityTools
             return gc;
         }
 
-        private static bool TryParseColor(string hex, out Color color)
+        internal static bool TryParseColor(string hex, out Color color)
         {
             color = default;
             if (string.IsNullOrEmpty(hex)) return false;
@@ -257,28 +319,58 @@ namespace UtilityTools
             (btn.ShowMode == ButtonAttribute.Mode.EditModeOnly && !Application.isPlaying) ||
             (btn.ShowMode == ButtonAttribute.Mode.PlayModeOnly && Application.isPlaying);
 
-        private static void EnsureCache(MonoBehaviour mb)
+        private static Dictionary<string, object> ParamsFor(Object owner)
         {
-            int id = mb.GetInstanceID();
-            if (!Cache.ContainsKey(id))
+            int id = owner.GetInstanceID();
+            if (!ParamCache.TryGetValue(id, out var values))
             {
-                if (Cache.Count > 64) PruneDeadCaches();
-                Cache[id] = new Dictionary<string, object>();
+                values = new Dictionary<string, object>();
+                ParamCache[id] = values;
             }
+
+            return values;
         }
 
         // Bound the static caches: drop entries whose owning object was destroyed/unloaded.
-        private static void PruneDeadCaches()
+        internal static void PruneDeadCaches()
         {
-            var dead = new List<int>();
-            foreach (var id in Cache.Keys)
-                if (EditorUtility.InstanceIDToObject(id) == null) dead.Add(id);
+            var alive = new Dictionary<int, bool>();
 
-            for (int i = 0; i < dead.Count; i++) Cache.Remove(dead[i]);
+            var deadIds = new List<int>();
+            foreach (var id in ParamCache.Keys)
+                if (!IsAlive(id, alive)) deadIds.Add(id);
+            for (int i = 0; i < deadIds.Count; i++) ParamCache.Remove(deadIds[i]);
+
+            PruneByOwner(ResultCache, alive);
+            PruneByOwner(RLCache, alive);
+            PruneByOwner(FoldCache, alive);
         }
 
-        private static string KeyBase(MonoBehaviour mb, MethodInfo m)
-            => mb.GetInstanceID() + "|" + m.DeclaringType.FullName + "|" + m.Name;
+        private static void PruneByOwner<T>(Dictionary<string, T> cache, Dictionary<int, bool> alive)
+        {
+            var dead = new List<string>();
+            foreach (var key in cache.Keys)
+                if (TryGetOwnerId(key, out int id) && !IsAlive(id, alive)) dead.Add(key);
+            for (int i = 0; i < dead.Count; i++) cache.Remove(dead[i]);
+        }
+
+        internal static bool TryGetOwnerId(string key, out int id)
+        {
+            id = 0;
+            int bar = key.IndexOf('|');
+            return bar > 0 && int.TryParse(key.Substring(0, bar), out id);
+        }
+
+        private static bool IsAlive(int id, Dictionary<int, bool> memo)
+        {
+            if (!memo.TryGetValue(id, out bool alive))
+                memo[id] = alive = EditorUtility.InstanceIDToObject(id) != null;
+            return alive;
+        }
+
+        // Metadata token keeps overloads apart.
+        private static string KeyBase(Object owner, MethodInfo m)
+            => owner.GetInstanceID() + "|" + m.DeclaringType.FullName + "|" + m.Name + "|" + m.MetadataToken;
 
         private static bool GetFold(string key, bool defaultOpen)
         {
@@ -294,64 +386,53 @@ namespace UtilityTools
         private static void SetFold(string key, bool value) => FoldCache[key] = value;
 
         // --------- Params UI / Build args ---------
-        private void DrawParamsUI(MonoBehaviour mb, MethodMeta meta)
+        private void DrawParamsUI(Object owner, MethodMeta meta)
         {
-            EnsureCache(mb);
+            var values = ParamsFor(owner);
             var ps = meta.Params;
-            string baseKey = KeyBase(mb, meta.Method);
+            string baseKey = KeyBase(owner, meta.Method);
 
             for (int i = 0; i < ps.Length; i++)
             {
                 string pKey = baseKey + "|" + ps[i].Name;
-                if (!Cache[mb.GetInstanceID()].TryGetValue(pKey, out var current) || current == null)
-                    current = ps[i].HasDefaultValue ? ps[i].DefaultValue : GetDefaultForType(ps[i].ParameterType);
+                if (!values.TryGetValue(pKey, out var current) || current == null)
+                    current = GetParamDefault(ps[i]);
 
-                object newVal = DrawAny(mb, ps[i].ParameterType, meta.ParamLabels[i], current, 0);
-                Cache[mb.GetInstanceID()][pKey] = newVal;
+                values[pKey] = DrawAny(pKey, ps[i].ParameterType, meta.ParamLabels[i], current, 0);
             }
         }
 
-        private bool AllParamsHaveValues(MonoBehaviour mb, MethodMeta meta)
+        private static object GetParamDefault(ParameterInfo p)
         {
-            EnsureCache(mb);
-            var ps = meta.Params;
-            string baseKey = KeyBase(mb, meta.Method);
-
-            for (int i = 0; i < ps.Length; i++)
-            {
-                string pKey = baseKey + "|" + ps[i].Name;
-                bool exists = Cache[mb.GetInstanceID()].TryGetValue(pKey, out var val);
-                if (!exists && !ps[i].HasDefaultValue) return false;
-                if (val == null && ps[i].ParameterType.IsValueType && !ps[i].HasDefaultValue) return false;
-            }
-
-            return true;
+            if (!p.HasDefaultValue) return GetDefaultForType(p.ParameterType);
+            object val = p.DefaultValue;
+            if (val != null && p.ParameterType.IsEnum && !p.ParameterType.IsInstanceOfType(val))
+                val = Enum.ToObject(p.ParameterType, val);
+            return val;
         }
 
-        private object[] BuildArgs(MonoBehaviour mb, MethodMeta meta)
+        private static object[] BuildArgs(Object owner, MethodMeta meta)
         {
-            EnsureCache(mb);
+            var values = ParamsFor(owner);
             var ps = meta.Params;
             var args = new object[ps.Length];
-            string baseKey = KeyBase(mb, meta.Method);
+            string baseKey = KeyBase(owner, meta.Method);
 
             for (int i = 0; i < ps.Length; i++)
             {
-                string key = baseKey + "|" + ps[i].Name;
-                Cache[mb.GetInstanceID()].TryGetValue(key, out var val);
+                var type = ps[i].ParameterType;
+                values.TryGetValue(baseKey + "|" + ps[i].Name, out var val);
+                if (val == null) val = GetParamDefault(ps[i]);
 
-                if (val == null && ps[i].HasDefaultValue) val = ps[i].DefaultValue;
-                if (val == null && ps[i].ParameterType.IsValueType) val = Activator.CreateInstance(ps[i].ParameterType);
-
-                if (val != null && !ps[i].ParameterType.IsInstanceOfType(val))
+                if (val != null && !type.IsInstanceOfType(val))
                 {
                     try
                     {
-                        val = Convert.ChangeType(val, ps[i].ParameterType);
+                        val = type.IsEnum ? Enum.ToObject(type, val) : Convert.ChangeType(val, type);
                     }
                     catch
                     {
-                        Debug.LogError($"Parameter '{ps[i].Name}' expects {ps[i].ParameterType.Name}");
+                        Debug.LogError($"Parameter '{ps[i].Name}' expects {type.Name}");
                         return null;
                     }
                 }
@@ -363,29 +444,47 @@ namespace UtilityTools
         }
 
         // --------- Invocation (return values + coroutines + static) ---------
-        private void InvokeButton(MonoBehaviour mb, MethodMeta meta, object[] args)
+        // With a multi-selection, instance methods run on every selected object (using the
+        // primary target's param values); static methods run once.
+        private void InvokeOnTargets(Object owner, MethodMeta meta, object[] args)
+        {
+            if (meta.IsStatic || targets.Length <= 1)
+            {
+                InvokeButton(owner, meta, args);
+                return;
+            }
+
+            foreach (var t in targets)
+                if (t && meta.Method.DeclaringType.IsInstanceOfType(t))
+                    InvokeButton(t, meta, args);
+        }
+
+        private static void InvokeButton(Object owner, MethodMeta meta, object[] args)
         {
             var method = meta.Method;
-            object targetObj = meta.IsStatic ? null : mb;
-            string resultKey = KeyBase(mb, method);
+            object targetObj = meta.IsStatic ? null : owner;
 
             try
             {
                 if (!meta.IsStatic)
-                    Undo.RegisterCompleteObjectUndo(mb, $"Invoke {method.Name}");
+                    Undo.RegisterCompleteObjectUndo(owner, $"Invoke {method.Name}");
 
                 object result = method.Invoke(targetObj, args);
 
                 if (meta.ReturnsCoroutine && result is IEnumerator routine)
                 {
-                    EditorCoroutineDriver.Run(routine);
+                    // In Play Mode use the real scheduler so WaitForSeconds etc. behave normally.
+                    if (Application.isPlaying && owner is MonoBehaviour mb && mb.isActiveAndEnabled)
+                        mb.StartCoroutine(routine);
+                    else
+                        EditorCoroutineDriver.Run(routine);
                 }
                 else if (meta.ReturnsValue)
                 {
-                    ResultCache[resultKey] = result;
+                    ResultCache[KeyBase(owner, method)] = result;
                 }
 
-                if (!meta.IsStatic) EditorUtility.SetDirty(mb);
+                if (!meta.IsStatic) EditorUtility.SetDirty(owner);
             }
             catch (TargetInvocationException tie)
             {
@@ -398,7 +497,8 @@ namespace UtilityTools
         }
 
         // --------- Big drawer (parameters) ---------
-        private object DrawAny(UnityEngine.Object context, Type t, GUIContent label, object current, int depth)
+        // scope = unique key for this value (object|method|param[|field...]); keys fold/list UI state.
+        private object DrawAny(string scope, Type t, GUIContent label, object current, int depth)
         {
             if (depth > 6)
             {
@@ -462,21 +562,15 @@ namespace UtilityTools
             if (t == typeof(LayerMask))
             {
                 int mask = current is LayerMask lm ? lm.value : 0;
-                if (s_LayerNames == null)
-                {
-                    s_LayerNames = new string[32];
-                    for (int i = 0; i < 32; i++) s_LayerNames[i] = LayerMask.LayerToName(i);
-                }
-
-                mask = EditorGUILayout.MaskField(label, mask, s_LayerNames);
+                mask = EditorGUILayout.MaskField(label, mask, LayerNames);
                 return (LayerMask)mask;
             }
 
             // object refs
-            if (typeof(UnityEngine.Object).IsAssignableFrom(t))
-                return EditorGUILayout.ObjectField(label, current as UnityEngine.Object, t, true);
+            if (typeof(Object).IsAssignableFrom(t))
+                return EditorGUILayout.ObjectField(label, current as Object, t, true);
 
-            // arrays / lists -> INLINE rows like Unity
+            // arrays / lists -> inline rows like Unity
             if (t.IsArray)
             {
                 Type elemType = t.GetElementType();
@@ -486,7 +580,7 @@ namespace UtilityTools
                 for (int i = 0; i < arr.Length; i++)
                     listBoxed.Add(arr.GetValue(i) ?? GetDefaultForType(elemType));
 
-                DrawReorderableListInline(context, label.text, elemType, listBoxed);
+                DrawReorderableListInline(scope, label.text, elemType, listBoxed);
 
                 var resized = Array.CreateInstance(elemType, listBoxed.Count);
                 for (int i = 0; i < listBoxed.Count; i++) resized.SetValue(listBoxed[i], i);
@@ -497,7 +591,7 @@ namespace UtilityTools
             {
                 Type elemType = t.GetGenericArguments()[0];
                 var list = current as IList ?? (IList)Activator.CreateInstance(t);
-                DrawReorderableListInline(context, label.text, elemType, list);
+                DrawReorderableListInline(scope, label.text, elemType, list);
                 return list;
             }
 
@@ -519,19 +613,19 @@ namespace UtilityTools
             if (IsSerializableByUnity(t))
             {
                 if (current == null) current = Activator.CreateInstance(t);
-                string fk = context.GetInstanceID() + "|CLASS|" + t.FullName + "|" + label.text;
+                string fk = scope + "|CLASS|" + t.FullName;
                 bool open = GetFold(fk, false);
                 open = EditorGUILayout.Foldout(open, $"{label.text} ({t.Name})", true);
                 SetFold(fk, open);
                 if (open)
                 {
-                    using (new EditorGUILayout.VerticalScope(new GUIStyle("box")))
+                    using (new EditorGUILayout.VerticalScope(GUI.skin.box))
                     {
                         EditorGUI.indentLevel++;
                         foreach (var f in GetUnitySerializableFields(t))
                         {
                             object fieldVal = f.GetValue(current);
-                            object newVal = DrawAny(context, f.FieldType,
+                            object newVal = DrawAny(scope + "|" + f.Name, f.FieldType,
                                 GetLabel(ObjectNames.NicifyVariableName(f.Name)), fieldVal, depth + 1);
                             if (!Equals(newVal, fieldVal)) f.SetValue(current, newVal);
                         }
@@ -547,85 +641,93 @@ namespace UtilityTools
             return current;
         }
 
-        // --------- NEW: Unity-like INLINE list rows ---------
-     private void DrawReorderableListInline(UnityEngine.Object context, string label, Type elemType, IList list)
-{
-    string key = context.GetInstanceID() + "|RL_INLINE|" + label + "|" + elemType.FullName;
-
-    if (!RLCache.TryGetValue(key, out var rl))
-    {
-        rl = new ReorderableList(list, elemType, true, true, true, true);
-
-        rl.drawHeaderCallback = rect =>
+        // --------- Unity-like inline list rows ---------
+        private void DrawReorderableListInline(string scope, string label, Type elemType, IList list)
         {
-            // left: list title   right: "Size [int]"
-            const float sizeFieldW  = 60f;
-            const float sizeLabelW  = 34f; // "Size"
-            const float padLeft     = 6f;
-            const float spacing     = 4f;
+            string key = scope + "|RL_INLINE|" + elemType.FullName;
 
-            // pad inside header so it aligns nicely with content
-            rect.x += padLeft; rect.width -= padLeft;
-
-            var rightRect = new Rect(rect.xMax - (sizeLabelW + spacing + sizeFieldW), rect.y, sizeLabelW + spacing + sizeFieldW, rect.height);
-            var titleRect = new Rect(rect.x, rect.y, rightRect.x - rect.x - spacing, rect.height);
-
-            EditorGUI.LabelField(titleRect, $"{label}  ({elemType.Name})");
-
-            // draw Size on the right
-            var sizeLabelRect = new Rect(rightRect.x, rightRect.y, sizeLabelW, rightRect.height);
-            var sizeFieldRect = new Rect(rightRect.x + sizeLabelW + spacing, rightRect.y, sizeFieldW, rightRect.height);
-
-            EditorGUI.LabelField(sizeLabelRect, "Size", EditorStyles.miniLabel);
-
-            EditorGUI.BeginChangeCheck();
-            int newSize = Mathf.Max(0, EditorGUI.IntField(sizeFieldRect, list.Count));
-            if (EditorGUI.EndChangeCheck())
+            if (!RLCache.TryGetValue(key, out var rl))
             {
-                while (list.Count < newSize) list.Add(GetDefaultForType(elemType));
-                while (list.Count > newSize) list.RemoveAt(list.Count - 1);
-                rl.index = Mathf.Clamp(rl.index, 0, list.Count - 1);
+                rl = new ReorderableList(list, elemType, true, true, true, true);
+
+                // NOTE: callbacks must read rl.list, not `list` — the cached ReorderableList outlives this
+                // call, and array params hand in a fresh IList every frame.
+                rl.drawHeaderCallback = rect =>
+                {
+                    // left: list title   right: "Size [int]"
+                    const float sizeFieldW = 60f;
+                    const float sizeLabelW = 34f; // "Size"
+                    const float padLeft = 6f;
+                    const float spacing = 4f;
+
+                    // pad inside header so it aligns nicely with content
+                    rect.x += padLeft;
+                    rect.width -= padLeft;
+
+                    var rightRect = new Rect(rect.xMax - (sizeLabelW + spacing + sizeFieldW), rect.y,
+                        sizeLabelW + spacing + sizeFieldW, rect.height);
+                    var titleRect = new Rect(rect.x, rect.y, rightRect.x - rect.x - spacing, rect.height);
+
+                    EditorGUI.LabelField(titleRect, $"{label}  ({elemType.Name})");
+
+                    // draw Size on the right
+                    var sizeLabelRect = new Rect(rightRect.x, rightRect.y, sizeLabelW, rightRect.height);
+                    var sizeFieldRect = new Rect(rightRect.x + sizeLabelW + spacing, rightRect.y, sizeFieldW,
+                        rightRect.height);
+
+                    EditorGUI.LabelField(sizeLabelRect, "Size", EditorStyles.miniLabel);
+
+                    var cur = rl.list;
+                    EditorGUI.BeginChangeCheck();
+                    int newSize = Mathf.Max(0, EditorGUI.IntField(sizeFieldRect, cur.Count));
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        while (cur.Count < newSize) cur.Add(GetDefaultForType(elemType));
+                        while (cur.Count > newSize) cur.RemoveAt(cur.Count - 1);
+                        rl.index = Mathf.Clamp(rl.index, 0, cur.Count - 1);
+                    }
+                };
+
+                rl.onAddCallback = l => l.list.Add(GetDefaultForType(elemType));
+                rl.onRemoveCallback = l =>
+                {
+                    if (l.index >= 0 && l.index < l.list.Count) l.list.RemoveAt(l.index);
+                };
+
+                rl.drawElementCallback = (rect, index, active, focused) =>
+                {
+                    rect.y += 2f;
+                    rect.height = EditorGUIUtility.singleLineHeight;
+
+                    // "Element n" label (left)
+                    var labelRect = new Rect(rect.x, rect.y, EditorGUIUtility.labelWidth, rect.height);
+                    EditorGUI.PrefixLabel(labelRect, new GUIContent($"Element {index}"));
+
+                    // field (right)
+                    var fieldRect = new Rect(rect.x + EditorGUIUtility.labelWidth, rect.y,
+                        rect.width - EditorGUIUtility.labelWidth, rect.height);
+
+                    object val = rl.list[index];
+                    if (TryDrawInlineField(fieldRect, elemType, val, out var newVal))
+                        rl.list[index] = newVal;
+                    else
+                        EditorGUI.LabelField(fieldRect, SummarizeValue(val, elemType));
+                };
+
+                rl.elementHeightCallback = _ => EditorGUIUtility.singleLineHeight + 6f;
+
+                RLCache[key] = rl;
             }
-        };
-
-        rl.onAddCallback    = l => list.Add(GetDefaultForType(elemType));
-        rl.onRemoveCallback = l => { if (l.index >= 0 && l.index < list.Count) list.RemoveAt(l.index); };
-
-        rl.drawElementCallback = (rect, index, active, focused) =>
-        {
-            rect.y += 2f;
-            rect.height = EditorGUIUtility.singleLineHeight;
-
-            // "Element n" label (left)
-            var labelRect = new Rect(rect.x, rect.y, EditorGUIUtility.labelWidth, rect.height);
-            EditorGUI.PrefixLabel(labelRect, new GUIContent($"Element {index}"));
-
-            // field (right)
-            var fieldRect = new Rect(rect.x + EditorGUIUtility.labelWidth, rect.y, rect.width - EditorGUIUtility.labelWidth, rect.height);
-
-            object val = list[index];
-            if (TryDrawInlineField(fieldRect, elemType, val, out var newVal))
-                list[index] = newVal;
             else
-                EditorGUI.LabelField(fieldRect, SummarizeValue(val, elemType));
-        };
+            {
+                rl.list = list;
+            }
 
-        rl.elementHeightCallback = _ => EditorGUIUtility.singleLineHeight + 6f;
-
-        RLCache[key] = rl;
-    }
-    else
-    {
-        rl.list = list;
-    }
-
-    rl.DoLayoutList();
-}
-
-
+            rl.DoLayoutList();
+        }
 
         // Draw a single-line field in a provided rect (like Unity's array rows)
-        private bool TryDrawInlineField(Rect r, Type t, object current, out object newVal)
+        private static bool TryDrawInlineField(Rect r, Type t, object current, out object newVal)
         {
             newVal = current;
 
@@ -737,26 +839,19 @@ namespace UtilityTools
                 newVal = EditorGUI.CurveField(r, current as AnimationCurve ?? AnimationCurve.Linear(0, 0, 1, 1));
                 return true;
             }
-#if UNITY_2019_1_OR_NEWER
+
             if (t == typeof(Gradient))
             {
                 var g = current as Gradient ?? new Gradient();
-
 #if UNITY_2022_2_OR_NEWER
-                // (Rect, GUIContent, Gradient, bool hdr)
                 newVal = EditorGUI.GradientField(r, GUIContent.none, g, false);
-#elif UNITY_2021_1_OR_NEWER
-            // (Rect, string, Gradient) or (Rect, string, Gradient, bool hdr) depending on minor version
-            // Passing an empty label keeps it inline like Unity's array rows.
-            newVal = EditorGUI.GradientField(r, string.Empty, g);
 #else
-            // (Rect, Gradient)
-            newVal = EditorGUI.GradientField(r, g);
+                // Empty label keeps it inline like Unity's array rows.
+                newVal = EditorGUI.GradientField(r, string.Empty, g);
 #endif
-
                 return true;
             }
-#endif
+
             if (t == typeof(Rect))
             {
                 var rr = current is Rect R ? R : default;
@@ -780,21 +875,15 @@ namespace UtilityTools
 
             if (t == typeof(LayerMask))
             {
-                if (s_LayerNames == null)
-                {
-                    s_LayerNames = new string[32];
-                    for (int i = 0; i < 32; i++) s_LayerNames[i] = LayerMask.LayerToName(i);
-                }
-
                 int mask = current is LayerMask lm ? lm.value : 0;
-                newVal = (LayerMask)EditorGUI.MaskField(r, mask, s_LayerNames);
+                newVal = (LayerMask)EditorGUI.MaskField(r, mask, LayerNames);
                 return true;
             }
 
-            // object refs (the one in your screenshot)
-            if (typeof(UnityEngine.Object).IsAssignableFrom(t))
+            // object refs
+            if (typeof(Object).IsAssignableFrom(t))
             {
-                newVal = EditorGUI.ObjectField(r, current as UnityEngine.Object, t, true);
+                newVal = EditorGUI.ObjectField(r, current as Object, t, true);
                 return true;
             }
 
@@ -813,6 +902,20 @@ namespace UtilityTools
             d = new Rect(c.xMax + gap, r.y, w, r.height);
         }
 
+        private static string[] LayerNames
+        {
+            get
+            {
+                if (s_LayerNames == null)
+                {
+                    s_LayerNames = new string[32];
+                    for (int i = 0; i < 32; i++) s_LayerNames[i] = LayerMask.LayerToName(i);
+                }
+
+                return s_LayerNames;
+            }
+        }
+
         private static string SummarizeValue(object obj, Type t)
         {
             if (obj == null) return "(null)";
@@ -821,9 +924,9 @@ namespace UtilityTools
             if (t == typeof(Vector3)) return ((Vector3)obj).ToString("F2");
             if (t == typeof(Vector4)) return ((Vector4)obj).ToString("F2");
             if (t == typeof(Color)) return ColorUtility.ToHtmlStringRGB((Color)obj);
-            if (typeof(UnityEngine.Object).IsAssignableFrom(t))
+            if (typeof(Object).IsAssignableFrom(t))
             {
-                var o = obj as UnityEngine.Object;
+                var o = obj as Object;
                 return o ? o.name : "(null)";
             }
 
@@ -847,7 +950,7 @@ namespace UtilityTools
 
         private static object GetDefaultForType(Type t) =>
             t.IsValueType ? Activator.CreateInstance(t) :
-            typeof(UnityEngine.Object).IsAssignableFrom(t) ? null :
+            typeof(Object).IsAssignableFrom(t) ? null :
             (t.IsClass && !t.IsAbstract && t.GetConstructor(Type.EmptyTypes) != null
                 ? Activator.CreateInstance(t)
                 : null);
@@ -856,7 +959,7 @@ namespace UtilityTools
         {
             if (t.IsPrimitive || t.IsEnum) return true;
             if (t == typeof(string)) return true;
-            if (typeof(UnityEngine.Object).IsAssignableFrom(t)) return true;
+            if (typeof(Object).IsAssignableFrom(t)) return true;
             if (t.IsArray) return IsSerializableByUnity(t.GetElementType());
             if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(List<>))
                 return IsSerializableByUnity(t.GetGenericArguments()[0]);
@@ -886,32 +989,61 @@ namespace UtilityTools
 
     /// <summary>
     /// Minimal editor-time coroutine pump so [Button] methods returning IEnumerator can run
-    /// outside Play Mode. Yields are advanced once per editor update tick; yield instructions
-    /// such as WaitForSeconds are not time-accurate here (each yield = one tick).
+    /// outside Play Mode. Advanced once per editor update tick. Nested IEnumerators and
+    /// CustomYieldInstructions (e.g. WaitForSecondsRealtime, WaitUntil) are followed; other yield
+    /// instructions such as WaitForSeconds are not time-accurate here (each yield = one tick).
+    /// In Play Mode, [Button] coroutines on an active MonoBehaviour use StartCoroutine instead.
     /// </summary>
     internal static class EditorCoroutineDriver
     {
-        private static readonly List<IEnumerator> s_Routines = new List<IEnumerator>();
+        private static readonly List<Stack<IEnumerator>> s_Routines = new List<Stack<IEnumerator>>();
         private static bool s_Hooked;
 
         public static void Run(IEnumerator routine)
         {
             if (routine == null) return;
-            s_Routines.Add(routine);
+            s_Routines.Add(Start(routine));
             if (s_Hooked) return;
             s_Hooked = true;
             EditorApplication.update += Pump;
         }
 
+        internal static Stack<IEnumerator> Start(IEnumerator routine)
+        {
+            var stack = new Stack<IEnumerator>();
+            stack.Push(routine);
+            return stack;
+        }
+
+        /// <summary>Advances one tick. Returns false once the routine (and everything it yielded) is done.</summary>
+        internal static bool Step(Stack<IEnumerator> stack)
+        {
+            if (stack.Count == 0) return false;
+
+            var top = stack.Peek();
+            bool more;
+            try { more = top.MoveNext(); }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+                stack.Clear();
+                return false;
+            }
+
+            if (more)
+            {
+                if (top.Current is IEnumerator nested) stack.Push(nested);
+                return true;
+            }
+
+            stack.Pop();
+            return stack.Count > 0;
+        }
+
         private static void Pump()
         {
             for (int i = s_Routines.Count - 1; i >= 0; i--)
-            {
-                bool more;
-                try { more = s_Routines[i].MoveNext(); }
-                catch (Exception e) { Debug.LogException(e); more = false; }
-                if (!more) s_Routines.RemoveAt(i);
-            }
+                if (!Step(s_Routines[i])) s_Routines.RemoveAt(i);
 
             if (s_Routines.Count == 0)
             {

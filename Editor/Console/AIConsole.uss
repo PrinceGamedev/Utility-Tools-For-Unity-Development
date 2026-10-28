@@ -18,6 +18,10 @@
     --aic-ok: #4cc38a;
     --aic-code-bg: #16171a;
     --aic-code-hl: rgba(255, 95, 90, 0.16);
+    --aic-rail-on: rgba(255, 255, 255, 0.11);
+    --aic-rail-on-hover: rgba(255, 255, 255, 0.15);
+    --aic-rail-press: rgba(255, 255, 255, 0.18);
+    --aic-badge-text: #0e1117;
 }
 
 .aic--light {
@@ -38,6 +42,10 @@
     --aic-ok: #1a7f37;
     --aic-code-bg: #f6f8fa;
     --aic-code-hl: rgba(207, 34, 46, 0.10);
+    --aic-rail-on: rgba(0, 0, 0, 0.09);
+    --aic-rail-on-hover: rgba(0, 0, 0, 0.12);
+    --aic-rail-press: rgba(0, 0, 0, 0.15);
+    --aic-badge-text: #ffffff;
 }
 
 /* ---------- Layout ---------- */
@@ -144,15 +152,17 @@
     background-color: var(--aic-border);
 }
 
+/* Button states (like Rider / VS Code tool strips):
+   off   — no background, icon dimmed
+   hover — faint background, icon brighter
+   on    — solid subtle fill, icon at full strength (never tinted), accent marker on the strip edge */
 .aic-rail__btn {
     width: 26px;
     height: 26px;
     margin: 1px 0;
     align-items: center;
     justify-content: center;
-    border-radius: 4px;
-    border-left-width: 2px;
-    border-left-color: rgba(0, 0, 0, 0);
+    border-radius: 5px;
 }
 
 .aic-rail__btn:hover {
@@ -160,17 +170,17 @@
 }
 
 .aic-rail__btn:active {
-    background-color: var(--aic-raised);
+    background-color: var(--aic-rail-press);
 }
 
 .aic-rail__icon {
     width: 16px;
     height: 16px;
-    opacity: 0.55;
+    opacity: 0.5;
 }
 
 .aic-rail__btn:hover .aic-rail__icon {
-    opacity: 0.9;
+    opacity: 0.85;
 }
 
 .aic-rail__fallback {
@@ -181,31 +191,52 @@
     margin: 0;
 }
 
-/* On: full-strength icon, faint accent background, accent marker on the left */
+.aic-rail__marker {
+    position: absolute;
+    left: -3px;
+    top: 6px;
+    width: 2px;
+    height: 14px;
+    border-radius: 1px;
+    background-color: var(--aic-accent);
+    display: none;
+}
+
 .aic-rail__btn--on {
-    background-color: rgba(90, 162, 255, 0.14);
-    border-left-color: var(--aic-accent);
+    background-color: var(--aic-rail-on);
+}
+
+.aic-rail__btn--on:hover {
+    background-color: var(--aic-rail-on-hover);
+}
+
+.aic-rail__btn--on .aic-rail__marker {
+    display: flex;
 }
 
 .aic-rail__btn--on .aic-rail__icon {
     opacity: 1;
-    --unity-image-tint-color: var(--aic-accent);
 }
 
 .aic-rail__btn--on .aic-rail__fallback {
-    color: var(--aic-accent);
+    color: var(--aic-text);
 }
 
-/* Small mode letter on cycling buttons (Sort) */
+/* Current mode of a cycling button (Sort): small pill in the corner */
 .aic-rail__badge {
     position: absolute;
-    right: 1px;
-    bottom: 0;
-    font-size: 8px;
-    -unity-font-style: bold;
-    color: var(--aic-accent);
-    padding: 0;
+    right: -2px;
+    bottom: -1px;
+    min-width: 10px;
+    height: 10px;
+    padding: 0 2px;
     margin: 0;
+    font-size: 7px;
+    -unity-font-style: bold;
+    -unity-text-align: middle-center;
+    color: var(--aic-badge-text);
+    background-color: var(--aic-accent);
+    border-radius: 5px;
 }
 
 .aic-rail--collapsed {

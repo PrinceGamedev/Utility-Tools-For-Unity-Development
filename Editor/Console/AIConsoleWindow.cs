@@ -375,7 +375,7 @@ namespace UtilityTools.AIConsole
             RailSeparator();
 
             // Panels
-            RailToggle("UnityEditor.InspectorWindow", "De", () => "Details pane", () => User.detailsOpen,
+            RailToggle("Profiler.UIDetails|align_horizontally_right|UnityEditor.InspectorWindow", "De", () => "Details pane", () => User.detailsOpen,
                 () => SetDetailsOpen(!User.detailsOpen));
             RailToggle("FilterByType", "Sy", () => "Systems bar", () => User.systemsOpen, () =>
             {
@@ -462,6 +462,11 @@ namespace UtilityTools.AIConsole
         {
             var item = new RailItem { Root = new VisualElement(), IconName = icon, Tip = tip, IsOn = isOn, BadgeText = badge };
             item.Root.AddToClassList("aic-rail__btn");
+
+            // Accent marker on the strip's outer edge, shown only when the option is on.
+            var marker = new VisualElement { pickingMode = PickingMode.Ignore };
+            marker.AddToClassList("aic-rail__marker");
+            item.Root.Add(marker);
 
             item.Icon = new Image();
             item.Icon.AddToClassList("aic-rail__icon");

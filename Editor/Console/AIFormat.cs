@@ -149,7 +149,7 @@ namespace UtilityTools.AIConsole
         }
 
         /// <summary>Compiler message without the "path(line,col): " prefix (file/line are listed separately).</summary>
-        private static string CompilerText(ConsoleEntry e)
+        internal static string CompilerText(ConsoleEntry e)
         {
             string m = e.message ?? "";
             int i = m.IndexOf("): ", StringComparison.Ordinal);

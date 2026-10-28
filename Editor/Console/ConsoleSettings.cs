@@ -75,6 +75,9 @@ namespace UtilityTools.AIConsole
 
     internal enum RowDensity { Compact, Comfortable }
 
+    /// <summary>Where the details pane docks. Auto = right when the window is wide, bottom otherwise.</summary>
+    internal enum DetailsDock { Auto, Bottom, Right }
+
     /// <summary>Personal settings — UserSettings/UtilityToolsConsole.asset (not committed by default).</summary>
     [FilePath("UserSettings/UtilityToolsConsole.asset", FilePathAttribute.Location.ProjectFolder)]
     internal sealed class ConsoleUserSettings : ScriptableSingleton<ConsoleUserSettings>
@@ -87,6 +90,11 @@ namespace UtilityTools.AIConsole
         public bool showEngineFrames;
         public RowDensity density = RowDensity.Compact;
         public float detailHeight = 260f;
+        public float detailWidth = 420f;
+        public DetailsDock detailsDock = DetailsDock.Auto;
+        public bool detailsOpen = true;
+        public bool systemsOpen = true;
+        public bool railOpen = true;
         public string search = "";
         public bool showLog = true, showWarning = true, showError = true;
         public string sortMode = "time";

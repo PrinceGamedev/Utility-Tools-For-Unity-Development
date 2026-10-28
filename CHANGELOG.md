@@ -22,6 +22,17 @@ All notable changes to this package are documented here. Both the package and ea
   - Double-click opens the code; Copy / Copy for AI / Copy JSON / Show Similar; Ctrl/Cmd+F search,
     Ctrl/Cmd+C copy, Ctrl/Cmd+Shift+C copy for AI.
   - Status bar shows AI file state; the window title shows the error count.
+  - Panels: the details pane docks **bottom or right** (Auto picks right on wide windows) with a drag
+    divider (double-click to hide); Systems, Timeline and Details collapse with ▾/▸ arrows; all of it
+    is remembered per user.
+  - Slim icon strip with one-click buttons for every option (no dropdown menus): Follow, Error Pause,
+    Clear on Play, Sort and Dock (cycle; Shift+click = back), Details / Systems / Timeline panels,
+    engine frames, row density, copy issues, AI folder, Settings, About. Tooltips name each option
+    and its state; options that are on show an accent marker; the chevron hides the strip.
+  - Responsive: on narrow windows row fields hide; on very narrow windows search moves to its own
+    row and `#id` hides.
+  - Compile errors/warnings show a `File.cs:line` chip instead of the full path; Unity's re-printed
+    copies of compiler messages are not counted twice.
 - **AI bridge** (file schema v1) — token-lean files an AI agent reads directly (no MCP server, no tool
   schemas in context), in `Logs/AIConsole/` (configurable):
   - `status.txt` — one line: state, mode, compile result, error/warning counts, last id (~30 tokens).

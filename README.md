@@ -54,14 +54,28 @@ Unity's Console with one capture pipeline and two readers:
   `fp:<fingerprint>`, `file:Spawner.cs`, `/regex/`.
 - **Filtering:** type toggles with live counts, and system chips (click to filter; right-click →
   *Mute for me*).
-- **Toolbar:** Collapse, Follow, Error Pause, and sort by time / newest / severity / count / system /
-  message. Clear on Play, the timeline, engine frames and row density are under `•••`.
+- **Toolbar:** Clear, Collapse, search, and the type counts.
+- **Icon strip** on the left. One click per option, no menus; hover any icon for its name and
+  current state. Options that are on show an accent marker.
+  - **View:** Follow, Error Pause, Clear on Play.
+  - **Sort:** one button that cycles time → newest → severity → count → system → message
+    (Shift+click goes back; the letter shows the current mode).
+  - **Panels:** Details, Systems, Timeline, and Dock (cycles Auto → Bottom → Right).
+  - **Display:** engine frames, roomy rows.
+  - **AI:** copy the issues digest, open the AI folder.
+  - Settings and About are pinned at the bottom.
+  - The chevron at the top hides or shows the strip.
 - **Rows:** double-click opens the code. Right-click offers Copy, Copy for AI, Copy JSON, Show Similar
   and Mute. `Ctrl/Cmd+F` searches, `Ctrl/Cmd+C` copies, `Ctrl/Cmd+Shift+C` copies for AI.
 - **What's captured:**
   - logs from every thread, including plain `Debug.Log` (a leading `[Tag]` becomes the system);
   - compiler errors and warnings;
   - Play Mode, compile and clear markers.
+- **Panels:**
+  - The details pane docks at the bottom or on the right (*Auto* picks right on wide windows).
+  - Drag the divider to resize it; double-click the divider to hide it.
+  - Systems, Timeline and Details open and close with their ▾/▸ arrows.
+  - The layout adapts to narrow windows and is remembered per user.
 - History survives script reloads.
 
 ### Pointing an AI agent at it

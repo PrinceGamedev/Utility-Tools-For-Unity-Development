@@ -59,7 +59,6 @@ namespace UtilityTools.AIConsole
         // ---------- UI ----------
         private ToolbarSearchField _search;
         private ToolbarToggle _logToggle, _warnToggle, _errorToggle;
-        private ToolbarMenu _sortMenu;
         private VisualElement _banner;
         private Label _bannerTitle, _bannerText;
         private VisualElement _systems;
@@ -70,6 +69,17 @@ namespace UtilityTools.AIConsole
         private ScrollView _details;
         private Label _statusLeft, _statusAi;
         private Label _emptyList;
+
+        // Layout: body = list host | splitter | details pane (column or row depending on dock).
+        private VisualElement _body, _listHost, _splitter, _detailsPane, _searchRow, _systemsChips;
+        private Toolbar _toolbar;
+        private VisualElement _searchSlot; // toolbar spacer; search sits right after it
+        private Label _detailsArrow, _systemsArrow, _timelineArrow;
+        private Button _dockButton;
+        private VisualElement _timelineBars;
+        private bool _sideDock, _narrow, _tiny;
+
+        private const float NarrowWidth = 640f, TinyWidth = 460f, SideDockMinWidth = 900f;
 
         private static Texture2D s_ErrorIcon, s_WarnIcon, s_InfoIcon, s_WindowIcon;
         private static FontDefinition s_MonoFont;
@@ -92,29 +102,52 @@ namespace UtilityTools.AIConsole
             if (sheet != null) root.styleSheets.Add(sheet);
 
             _query = new SearchQuery(User.search);
+            titleContent = new GUIContent("AI Console", s_WindowIcon);
 
             root.Add(BuildToolbar());
-            root.Add(BuildBanner());
 
-            _systems = new VisualElement();
-            _systems.AddToClassList("aic-systems");
-            root.Add(_systems);
+            // Main row: side bar | content column (search row, banner, systems, timeline, body).
+            var main = new VisualElement();
+            main.AddToClassList("aic-main");
+            root.Add(main);
+            main.Add(BuildRail());
 
-            root.Add(BuildTimeline());
-            root.Add(BuildList());
+            var content = new VisualElement();
+            content.AddToClassList("aic-content");
+            main.Add(content);
 
-            var splitter = new VisualElement();
-            splitter.AddToClassList("aic-splitter");
-            splitter.AddManipulator(new SplitterDragger(this));
-            root.Add(splitter);
+            // Very narrow windows move the search field here (see ApplyResponsive).
+            _searchRow = new VisualElement();
+            _searchRow.AddToClassList("aic-search-row");
+            content.Add(_searchRow);
 
-            _details = new ScrollView(ScrollViewMode.Vertical);
-            _details.AddToClassList("aic-details");
-            _details.style.height = Mathf.Max(80f, User.detailHeight);
-            root.Add(_details);
+            content.Add(BuildBanner());
+            content.Add(BuildSystems());
+            content.Add(BuildTimeline());
+
+            _body = new VisualElement();
+            _body.AddToClassList("aic-body");
+            content.Add(_body);
+
+            _listHost = new VisualElement();
+            _listHost.AddToClassList("aic-list-host");
+            _listHost.Add(BuildList());
+            _listHost.Add(_emptyList);
+            _body.Add(_listHost);
+
+            _splitter = new VisualElement { tooltip = "Drag to resize · double-click to hide details" };
+            _splitter.AddToClassList("aic-splitter");
+            _splitter.AddManipulator(new SplitterDragger(this));
+            _splitter.RegisterCallback<MouseDownEvent>(e =>
+            {
+                if (e.clickCount == 2) SetDetailsOpen(!User.detailsOpen);
+            });
+            _body.Add(_splitter);
+            _body.Add(BuildDetailsPane());
 
             root.Add(BuildStatusBar());
             root.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
+            root.RegisterCallback<GeometryChangedEvent>(_ => ApplyResponsive());
 
             ConsoleStore.Changed += MarkDirty;
             ConsoleProjectSettings.Changed += MarkDirty;
@@ -185,44 +218,21 @@ namespace UtilityTools.AIConsole
         // ---------- Toolbar ----------
         private VisualElement BuildToolbar()
         {
-            var bar = new Toolbar();
+            var bar = _toolbar = new Toolbar();
             bar.AddToClassList("aic-toolbar");
 
-            bar.Add(new ToolbarButton(() => ConsoleCapture.ClearAll("cleared by user"))
-                { text = "Clear", tooltip = "Clear the console. AI files keep the history." });
+            var clear = new ToolbarButton(() => ConsoleCapture.ClearAll("cleared by user"))
+                { text = "Clear", tooltip = "Clear the console. AI files keep the history." };
+            clear.AddToClassList("aic-toolbar__fixed");
+            bar.Add(clear);
 
-            bar.Add(MakeToggle("Collapse", User.collapse, "Group repeats of the same log (shows ×count)", v =>
-            {
-                User.collapse = v;
-                SaveUser();
-                MarkDirty();
-            }));
+            var collapse = MakeToggle("Collapse", User.collapse, "Group repeats of the same log (shows ×count)", SetCollapse);
+            collapse.AddToClassList("aic-toolbar__fixed");
+            bar.Add(collapse);
+            _collapseToggle = collapse;
 
-            bar.Add(MakeToggle("Follow", User.follow, "Keep the newest log in view", v =>
-            {
-                User.follow = v;
-                SaveUser();
-                if (v) ScrollToNewest();
-            }));
-
-            bar.Add(MakeToggle("Error Pause", User.pauseOnError, "Pause Play Mode when an error is logged", v =>
-            {
-                User.pauseOnError = v;
-                SaveUser();
-            }));
-
-            _sortMenu = new ToolbarMenu { tooltip = "Sort order" };
-            foreach (var mode in new[] { "time", "newest", "severity", "count", "system", "message" })
-            {
-                string m = mode;
-                _sortMenu.menu.AppendAction(SortLabel(m), _ => SetSort(m),
-                    _ => User.sortMode == m ? DropdownMenuAction.Status.Checked : DropdownMenuAction.Status.Normal);
-            }
-
-            _sortMenu.text = "Sort: " + SortLabel(User.sortMode);
-            bar.Add(_sortMenu);
-
-            var spacer = new VisualElement();
+            // Everything else (follow, pause, sort, panels, display, AI) lives in the side bar.
+            var spacer = _searchSlot = new VisualElement();
             spacer.AddToClassList("aic-toolbar__spacer");
             bar.Add(spacer);
 
@@ -244,10 +254,6 @@ namespace UtilityTools.AIConsole
             bar.Add(_logToggle);
             bar.Add(_warnToggle);
             bar.Add(_errorToggle);
-
-            var more = new ToolbarMenu { text = "•••", tooltip = "More" };
-            FillMoreMenu(more.menu);
-            bar.Add(more);
             return bar;
         }
 
@@ -280,23 +286,254 @@ namespace UtilityTools.AIConsole
             return t;
         }
 
-        private void FillMoreMenu(DropdownMenu menu)
+        private ToolbarToggle _collapseToggle;
+
+        private void SetCollapse(bool v)
         {
-            menu.AppendAction("Clear on Play", _ => { User.clearOnPlay = !User.clearOnPlay; SaveUser(); },
-                _ => Check(User.clearOnPlay));
-            menu.AppendAction("Show Timeline", _ => { User.showTimeline = !User.showTimeline; SaveUser(); MarkDirty(); },
-                _ => Check(User.showTimeline));
-            menu.AppendAction("Show Engine Frames", _ => { User.showEngineFrames = !User.showEngineFrames; SaveUser(); RefreshDetails(true); },
-                _ => Check(User.showEngineFrames));
-            menu.AppendAction("Comfortable Rows", _ => SetDensity(User.density == RowDensity.Compact ? RowDensity.Comfortable : RowDensity.Compact),
-                _ => Check(User.density == RowDensity.Comfortable));
-            menu.AppendSeparator();
-            menu.AppendAction("Copy Issues for AI", _ => EditorGUIUtility.systemCopyBuffer = IssuesDigest());
-            menu.AppendAction("Open AI Files Folder", _ => AIBridge.Reveal());
-            menu.AppendSeparator();
-            menu.AppendAction("Settings…", _ => SettingsService.OpenProjectSettings(SettingsPath));
-            menu.AppendAction($"About Utility Tools {UtilityToolsInfo.PackageVersion}…",
-                _ => SettingsService.OpenProjectSettings("Project/Utility Tools"));
+            User.collapse = v;
+            _collapseToggle?.SetValueWithoutNotify(v);
+            SaveUser();
+            MarkDirty();
+        }
+
+        private void SetFollow(bool v)
+        {
+            User.follow = v;
+            SaveUser();
+            if (v) ScrollToNewest();
+        }
+
+        private void SetErrorPause(bool v)
+        {
+            User.pauseOnError = v;
+            SaveUser();
+        }
+
+        // ---------- Side bar ----------
+        // Slim icon strip (like Rider / VS Code): one click per option, no dropdowns. Toggles show an
+        // accent state; Sort and Dock cycle (Shift+click = back); tooltips name the current state.
+        // The chevron hides the strip; state is remembered per user.
+        private VisualElement _rail;
+        private Label _railToggle;
+
+        private static readonly string[] SortModes = { "time", "newest", "severity", "count", "system", "message" };
+
+        /// <summary>A side-bar button whose icon, tooltip and lit state are recomputed on every refresh.</summary>
+        private sealed class RailItem
+        {
+            public VisualElement Root;
+            public Image Icon;
+            public Label Fallback, Badge;
+            public Func<bool> IsOn;
+            public Func<string> IconName, Tip, BadgeText;
+        }
+
+        private readonly List<RailItem> _railItemsList = new List<RailItem>();
+        private VisualElement _railGroups;
+        private Image _railToggleIcon;
+
+        private VisualElement BuildRail()
+        {
+            _rail = new VisualElement();
+            _rail.AddToClassList("aic-rail");
+
+            _railToggle = new Label();
+            _railToggle.AddToClassList("aic-rail__toggle");
+            _railToggleIcon = new Image();
+            _railToggleIcon.AddToClassList("aic-rail__toggle-icon");
+            _railToggle.Add(_railToggleIcon);
+            _railToggle.AddManipulator(new Clickable(() =>
+            {
+                User.railOpen = !User.railOpen;
+                SaveUser();
+                UpdateRail();
+            }));
+            _rail.Add(_railToggle);
+
+            _railGroups = new VisualElement();
+            _railGroups.AddToClassList("aic-rail__groups");
+            _rail.Add(_railGroups);
+
+            // View
+            RailToggle("Profiler.LastFrame|Animation.LastKey|scrolldown|forward", "Fo", () => "Follow — keep the newest log in view", () => User.follow,
+                () => SetFollow(!User.follow));
+            RailToggle("PauseButton", "EP", () => "Error Pause — pause Play Mode on the first error", () => User.pauseOnError,
+                () => SetErrorPause(!User.pauseOnError));
+            RailToggle("TreeEditor.Trash", "CP", () => "Clear on Play — clear the console when entering Play Mode",
+                () => User.clearOnPlay, () =>
+                {
+                    User.clearOnPlay = !User.clearOnPlay;
+                    SaveUser();
+                });
+            RailSeparator();
+
+            // Order (cycles; Shift+click goes back)
+            RailCycle(() => "AlphabeticalSorting", "So",
+                () => $"Sort: {SortLabel(User.sortMode)}\nClick for next · Shift+click for previous",
+                () => SortLabel(User.sortMode).Substring(0, 1),
+                back => SetSort(Cycle(SortModes, User.sortMode, back)));
+            RailSeparator();
+
+            // Panels
+            RailToggle("UnityEditor.InspectorWindow", "De", () => "Details pane", () => User.detailsOpen,
+                () => SetDetailsOpen(!User.detailsOpen));
+            RailToggle("FilterByType", "Sy", () => "Systems bar", () => User.systemsOpen, () =>
+            {
+                User.systemsOpen = !User.systemsOpen;
+                SaveUser();
+                _systemsSignature = "";
+                MarkDirty();
+            });
+            RailToggle("UnityEditor.ProfilerWindow", "Tl", () => "Timeline", () => User.showTimeline, () =>
+            {
+                User.showTimeline = !User.showTimeline;
+                SaveUser();
+                MarkDirty();
+            });
+            RailCycle(() => User.detailsDock == DetailsDock.Bottom ? "align_vertically_bottom"
+                    : User.detailsDock == DetailsDock.Right ? "align_horizontally_right" : "GridLayoutGroup Icon", "Dk",
+                () => $"Dock details: {User.detailsDock}" +
+                      (User.detailsDock == DetailsDock.Auto ? " (right on wide windows, bottom otherwise)" : "") +
+                      "\nClick for next · Shift+click for previous",
+                () => null,
+                back =>
+                {
+                    var docks = new[] { DetailsDock.Auto, DetailsDock.Bottom, DetailsDock.Right };
+                    int i = Array.IndexOf(docks, User.detailsDock);
+                    SetDock(docks[(i + (back ? docks.Length - 1 : 1)) % docks.Length]);
+                });
+            RailSeparator();
+
+            // Display
+            RailToggle("UnityEditor.DebugInspectorWindow", "EF", () => "Engine frames — show Unity / System frames in stack traces",
+                () => User.showEngineFrames, () =>
+                {
+                    User.showEngineFrames = !User.showEngineFrames;
+                    SaveUser();
+                    RefreshDetails(true);
+                });
+            RailToggle("VerticalLayoutGroup Icon", "RR", () => "Roomy rows", () => User.density == RowDensity.Comfortable,
+                () => SetDensity(User.density == RowDensity.Compact ? RowDensity.Comfortable : RowDensity.Compact));
+            RailSeparator();
+
+            // AI
+            RailAction("SaveAs|TextAsset Icon|UnityEditor.ConsoleWindow", "CI", "Copy issues for AI — the errors.md digest, ready to paste",
+                () => EditorGUIUtility.systemCopyBuffer = IssuesDigest());
+            RailAction("FolderOpened Icon", "AI", "Open the AI files folder (Logs/AIConsole)", AIBridge.Reveal);
+
+            // Bottom-pinned
+            var spacer = new VisualElement();
+            spacer.AddToClassList("aic-rail__spacer");
+            _railGroups.Add(spacer);
+            RailAction("Settings", "St", "Settings — Project Settings → Utility Tools → AI Console",
+                () => SettingsService.OpenProjectSettings(SettingsPath));
+            RailAction("_Help", "?", $"About — Utility Tools {UtilityToolsInfo.PackageVersion}, feature versions",
+                () => SettingsService.OpenProjectSettings("Project/Utility Tools"));
+
+            UpdateRail();
+            return _rail;
+        }
+
+        private static string Cycle(string[] values, string current, bool back)
+        {
+            int i = Array.IndexOf(values, current);
+            if (i < 0) i = 0;
+            return values[(i + (back ? values.Length - 1 : 1)) % values.Length];
+        }
+
+        private void RailSeparator()
+        {
+            var s = new VisualElement();
+            s.AddToClassList("aic-rail__sep");
+            _railGroups.Add(s);
+        }
+
+        private void RailToggle(string icon, string fallback, Func<string> tip, Func<bool> isOn, Action onClick) =>
+            AddRailItem(() => icon, fallback, tip, isOn, null, _ => onClick());
+
+        private void RailCycle(Func<string> icon, string fallback, Func<string> tip, Func<string> badge, Action<bool> onClick) =>
+            AddRailItem(icon, fallback, tip, null, badge, onClick);
+
+        private void RailAction(string icon, string fallback, string tip, Action onClick) =>
+            AddRailItem(() => icon, fallback, () => tip, null, null, _ => onClick());
+
+        private void AddRailItem(Func<string> icon, string fallback, Func<string> tip, Func<bool> isOn,
+            Func<string> badge, Action<bool> onClick)
+        {
+            var item = new RailItem { Root = new VisualElement(), IconName = icon, Tip = tip, IsOn = isOn, BadgeText = badge };
+            item.Root.AddToClassList("aic-rail__btn");
+
+            item.Icon = new Image();
+            item.Icon.AddToClassList("aic-rail__icon");
+            item.Root.Add(item.Icon);
+
+            item.Fallback = new Label(fallback);
+            item.Fallback.AddToClassList("aic-rail__fallback");
+            item.Root.Add(item.Fallback);
+
+            item.Badge = new Label();
+            item.Badge.AddToClassList("aic-rail__badge");
+            item.Root.Add(item.Badge);
+
+            item.Root.RegisterCallback<ClickEvent>(e =>
+            {
+                onClick(e.shiftKey);
+                UpdateRail();
+                e.StopPropagation();
+            });
+
+            _railItemsList.Add(item);
+            _railGroups.Add(item.Root);
+        }
+
+        private static readonly Dictionary<string, Texture2D> s_IconCache = new Dictionary<string, Texture2D>();
+
+        /// <summary>
+        /// Editor icon for the current skin ("d_" variant in dark). <paramref name="names"/> may list
+        /// fallbacks separated by '|' — not every built-in icon is reachable through FindTexture.
+        /// Returns null when none load (the button then shows its text fallback).
+        /// </summary>
+        private static Texture2D EditorIcon(string names)
+        {
+            if (string.IsNullOrEmpty(names)) return null;
+            if (s_IconCache.TryGetValue(names, out var cached)) return cached;
+
+            Texture2D tex = null;
+            foreach (var name in names.Split('|'))
+            {
+                string dark = "d_" + name;
+                tex = EditorGUIUtility.isProSkin
+                    ? EditorGUIUtility.FindTexture(dark) ?? EditorGUIUtility.FindTexture(name)
+                    : EditorGUIUtility.FindTexture(name) ?? EditorGUIUtility.FindTexture(dark);
+                if (tex != null) break;
+            }
+
+            s_IconCache[names] = tex;
+            return tex;
+        }
+
+        private void UpdateRail()
+        {
+            if (_rail == null) return;
+            bool open = User.railOpen;
+            _rail.EnableInClassList("aic-rail--collapsed", !open);
+            _railToggleIcon.image = EditorIcon(open ? "tab_prev" : "tab_next");
+            _railToggle.text = _railToggleIcon.image == null ? (open ? "‹" : "›") : "";
+            _railToggle.tooltip = open ? "Hide the side bar" : "Show the side bar";
+
+            foreach (var item in _railItemsList)
+            {
+                var tex = EditorIcon(item.IconName());
+                item.Icon.image = tex;
+                item.Icon.EnableInClassList("aic-hidden", tex == null);
+                item.Fallback.EnableInClassList("aic-hidden", tex != null);
+                item.Root.tooltip = item.Tip();
+                item.Root.EnableInClassList("aic-rail__btn--on", item.IsOn != null && item.IsOn());
+
+                string badge = item.BadgeText?.Invoke();
+                item.Badge.text = badge ?? "";
+                item.Badge.EnableInClassList("aic-hidden", string.IsNullOrEmpty(badge));
+            }
         }
 
         private static DropdownMenuAction.Status Check(bool on) =>
@@ -331,7 +568,6 @@ namespace UtilityTools.AIConsole
         private void SetSort(string mode)
         {
             User.sortMode = mode;
-            _sortMenu.text = "Sort: " + SortLabel(mode);
             SaveUser();
             MarkDirty();
         }
@@ -397,6 +633,35 @@ namespace UtilityTools.AIConsole
         }
 
         // ---------- Systems ----------
+        private VisualElement BuildSystems()
+        {
+            _systems = new VisualElement();
+            _systems.AddToClassList("aic-systems");
+
+            _systemsArrow = MakeArrow("Show or hide the systems bar", () =>
+            {
+                User.systemsOpen = !User.systemsOpen;
+                SaveUser();
+                _systemsSignature = "";
+                MarkDirty();
+            });
+            _systems.Add(_systemsArrow);
+
+            _systemsChips = new VisualElement();
+            _systemsChips.AddToClassList("aic-systems__chips");
+            _systems.Add(_systemsChips);
+            return _systems;
+        }
+
+        /// <summary>Clickable ▾/▸ label used as the header of collapsible panels.</summary>
+        private static Label MakeArrow(string tooltip, Action onClick)
+        {
+            var arrow = new Label("▾") { tooltip = tooltip };
+            arrow.AddToClassList("aic-arrow");
+            arrow.AddManipulator(new Clickable(onClick));
+            return arrow;
+        }
+
         private void UpdateSystems()
         {
             var names = new List<string>(_systemCounts.Keys);
@@ -414,13 +679,18 @@ namespace UtilityTools.AIConsole
                     .Append(IsChannelOff(n) ? 'x' : 'o').Append('|');
             }
 
-            string signature = sig.ToString();
+            string signature = sig.ToString() + (User.systemsOpen ? "open" : "closed");
             _systems.style.display = names.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
             if (signature == _systemsSignature) return;
             _systemsSignature = signature;
 
-            _systems.Clear();
-            foreach (var n in names) _systems.Add(MakeChip(n));
+            bool open = User.systemsOpen;
+            _systems.EnableInClassList("aic-panel--collapsed", !open);
+            _systemsArrow.text = open ? "▾" : $"▸  Systems ({names.Count}" +
+                                         (_systemFilter.Count > 0 ? $", {_systemFilter.Count} filtered)" : ")");
+            _systemsChips.Clear();
+            if (!open) return;
+            foreach (var n in names) _systemsChips.Add(MakeChip(n));
         }
 
         private VisualElement MakeChip(string system)
@@ -493,6 +763,19 @@ namespace UtilityTools.AIConsole
         {
             _timeline = new VisualElement();
             _timeline.AddToClassList("aic-timeline");
+
+            _timelineArrow = MakeArrow("Show or hide the timeline", () =>
+            {
+                User.showTimeline = !User.showTimeline;
+                SaveUser();
+                MarkDirty();
+            });
+            _timeline.Add(_timelineArrow);
+
+            _timelineBars = new VisualElement();
+            _timelineBars.AddToClassList("aic-timeline__bars");
+            _timeline.Add(_timelineBars);
+
             for (int i = 0; i < TimelineBuckets; i++)
             {
                 int bucket = i;
@@ -508,7 +791,7 @@ namespace UtilityTools.AIConsole
 
                 col.AddManipulator(new Clickable(() => JumpToBucket(bucket)));
                 _timelineCols[i] = col;
-                _timeline.Add(col);
+                _timelineBars.Add(col);
             }
 
             return _timeline;
@@ -519,9 +802,16 @@ namespace UtilityTools.AIConsole
         private void UpdateTimeline()
         {
             var entries = ConsoleStore.Entries;
-            bool show = User.showTimeline && entries.Count > 1;
-            _timeline.style.display = show ? DisplayStyle.Flex : DisplayStyle.None;
-            if (!show) return;
+            int logs = 0;
+            foreach (var e in entries)
+                if (e.kind != EntryKind.Marker && ++logs > 1) break;
+
+            // Only worth showing once there are real logs to plot (markers alone draw nothing).
+            bool open = User.showTimeline;
+            _timeline.style.display = logs > 1 ? DisplayStyle.Flex : DisplayStyle.None;
+            _timeline.EnableInClassList("aic-panel--collapsed", !open);
+            _timelineArrow.text = open ? "▾" : "▸  Timeline";
+            if (!open || logs <= 1) return;
 
             long from = entries[0].ticks, to = entries[entries.Count - 1].ticks;
             long span = Math.Max(to - from, TimeSpan.FromSeconds(10).Ticks);
@@ -600,12 +890,11 @@ namespace UtilityTools.AIConsole
             _list.onSelectionChange += OnSelectionChanged;
             _list.onItemsChosen += OnItemsChosen;
 #endif
+            // Overlay shown when nothing matches. It lives in the list host: ListView doesn't accept children.
             _emptyList = new Label("No logs match.\nClear the search or enable more types / systems.");
             _emptyList.AddToClassList("aic-empty");
+            _emptyList.AddToClassList("aic-empty--overlay");
             _emptyList.pickingMode = PickingMode.Ignore;
-            _emptyList.style.position = Position.Absolute;
-            _emptyList.style.left = _emptyList.style.right = _emptyList.style.top = _emptyList.style.bottom = 0;
-            _list.Add(_emptyList);
             return _list;
         }
 
@@ -652,8 +941,9 @@ namespace UtilityTools.AIConsole
             v.Root.EnableInClassList("aic-row--marker", marker);
             v.Root.EnableInClassList("aic-row--pinned", e.IsCompile);
 
-            v.RuleLeft.style.display = v.RuleRight.style.display = marker ? DisplayStyle.Flex : DisplayStyle.None;
-            v.Icon.style.display = marker ? DisplayStyle.None : DisplayStyle.Flex;
+            v.RuleLeft.EnableInClassList("aic-hidden", !marker);
+            v.RuleRight.EnableInClassList("aic-hidden", !marker);
+            v.Icon.EnableInClassList("aic-hidden", marker);
             v.Icon.image = e.IsError ? s_ErrorIcon : e.IsWarning ? s_WarnIcon : s_InfoIcon;
 
             Color stripColor = e.system != null ? ParseColor(e.color ?? ChannelConfig.ColorFor(e.system))
@@ -668,30 +958,41 @@ namespace UtilityTools.AIConsole
                 v.System.text = e.system;
                 v.System.style.color = c;
                 v.System.style.backgroundColor = new Color(c.r, c.g, c.b, 0.16f);
-                v.System.style.display = DisplayStyle.Flex;
+            }
+
+            v.System.EnableInClassList("aic-hidden", e.system == null || marker);
+            v.System.RemoveFromClassList("aic-row__file");
+
+            if (e.IsCompile && e.file != null)
+            {
+                // "GA_Menu.cs:33" chip + the message without its long path prefix (full path is in details).
+                v.System.text = Path.GetFileName(e.file) + ":" + e.line.ToString(CultureInfo.InvariantCulture);
+                v.System.style.color = StyleKeyword.Null;
+                v.System.style.backgroundColor = StyleKeyword.Null;
+                v.System.AddToClassList("aic-row__file");
+                v.System.RemoveFromClassList("aic-hidden");
+                v.System.tooltip = $"{e.file}:{e.line}:{e.column}";
+                v.Message.text = AIFormat.CompilerText(e);
             }
             else
             {
-                v.System.style.display = DisplayStyle.None;
+                v.System.tooltip = null;
+                v.Message.text = e.FirstLine;
             }
-
-            v.Message.text = e.FirstLine;
 
             if (e.FieldCount > 0 && !marker)
             {
                 var parts = new string[e.FieldCount];
                 for (int i = 0; i < parts.Length; i++) parts[i] = e.fieldKeys[i] + "=" + e.fieldValues[i];
                 v.Fields.text = string.Join("  ", parts);
-                v.Fields.style.display = DisplayStyle.Flex;
             }
-            else
-            {
-                v.Fields.style.display = DisplayStyle.None;
-            }
+
+            // Visibility via classes (not inline styles) so the responsive USS rules can still hide them.
+            v.Fields.EnableInClassList("aic-hidden", e.FieldCount == 0 || marker);
 
             int count = User.collapse ? ConsoleStore.GroupOf(e)?.Count ?? 1 : 1;
             v.Badge.text = "×" + count.ToString(CultureInfo.InvariantCulture);
-            v.Badge.style.display = count > 1 ? DisplayStyle.Flex : DisplayStyle.None;
+            v.Badge.EnableInClassList("aic-hidden", count <= 1);
 
             v.Id.text = marker ? "" : "#" + e.id.ToString(CultureInfo.InvariantCulture);
         }
@@ -756,6 +1057,7 @@ namespace UtilityTools.AIConsole
             UpdateSystems();
             UpdateTimeline();
             UpdateStatus();
+            UpdateRail();
             RefreshDetails(false);
         }
 
@@ -885,6 +1187,109 @@ namespace UtilityTools.AIConsole
                 if (o is ConsoleEntry e) OpenBestSource(e);
                 return;
             }
+        }
+
+        // ---------- Layout: details pane, docking, responsive ----------
+        private VisualElement BuildDetailsPane()
+        {
+            _detailsPane = new VisualElement();
+            _detailsPane.AddToClassList("aic-details-pane");
+
+            var header = new VisualElement();
+            header.AddToClassList("aic-details-header");
+
+            _detailsArrow = MakeArrow("Show or hide details (or double-click the divider)",
+                () => SetDetailsOpen(!User.detailsOpen));
+            header.Add(_detailsArrow);
+
+            var title = new Label("DETAILS");
+            title.AddToClassList("aic-pane-title");
+            title.AddManipulator(new Clickable(() => SetDetailsOpen(!User.detailsOpen)));
+            header.Add(title);
+
+            var spacer = new VisualElement();
+            spacer.style.flexGrow = 1;
+            header.Add(spacer);
+
+            _dockButton = new Button(CycleDock) { tooltip = "Dock details: Auto → Bottom → Right" };
+            _dockButton.AddToClassList("aic-dock-button");
+            header.Add(_dockButton);
+
+            _detailsPane.Add(header);
+
+            _details = new ScrollView(ScrollViewMode.Vertical);
+            _details.AddToClassList("aic-details");
+            _detailsPane.Add(_details);
+            return _detailsPane;
+        }
+
+        private void SetDetailsOpen(bool open)
+        {
+            User.detailsOpen = open;
+            SaveUser();
+            ApplyResponsive();
+        }
+
+        private void SetDock(DetailsDock dock)
+        {
+            User.detailsDock = dock;
+            SaveUser();
+            ApplyResponsive();
+        }
+
+        private void CycleDock()
+        {
+            User.detailsDock = User.detailsDock == DetailsDock.Auto ? DetailsDock.Bottom
+                : User.detailsDock == DetailsDock.Bottom ? DetailsDock.Right : DetailsDock.Auto;
+            SaveUser();
+            ApplyResponsive();
+        }
+
+        /// <summary>Re-applies breakpoints, dock side and pane sizes. Runs on every window resize.</summary>
+        private void ApplyResponsive()
+        {
+            if (_body == null) return;
+            var root = rootVisualElement;
+            float w = root.resolvedStyle.width, h = root.resolvedStyle.height;
+            if (float.IsNaN(w) || w <= 0) return;
+
+            _narrow = w < NarrowWidth;
+            _tiny = w < TinyWidth;
+            root.EnableInClassList("aic--narrow", _narrow);
+            root.EnableInClassList("aic--tiny", _tiny);
+
+            // Search gets its own row when the toolbar is too tight.
+            if (_tiny && _search.parent != _searchRow) _searchRow.Add(_search);
+            else if (!_tiny && _search.parent == _searchRow) _toolbar.Insert(_toolbar.IndexOf(_searchSlot) + 1, _search);
+            _searchRow.style.display = _tiny ? DisplayStyle.Flex : DisplayStyle.None;
+
+            bool side = User.detailsDock == DetailsDock.Right ||
+                        (User.detailsDock == DetailsDock.Auto && w >= SideDockMinWidth && w > h * 1.2f);
+            _sideDock = side;
+            _body.EnableInClassList("aic-body--side", side);
+            _splitter.EnableInClassList("aic-splitter--h", side);
+            _splitter.EnableInClassList("aic-splitter--v", !side);
+
+            bool open = User.detailsOpen;
+            _detailsPane.EnableInClassList("aic-details-pane--collapsed", !open);
+            _detailsArrow.text = open ? "▾" : side ? "◂" : "▴";
+            _splitter.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
+
+            if (side)
+            {
+                _detailsPane.style.height = StyleKeyword.Auto;
+                _detailsPane.style.width = open ? Mathf.Clamp(User.detailWidth, 220f, Mathf.Max(220f, w - 240f)) : 30f;
+            }
+            else
+            {
+                _detailsPane.style.width = StyleKeyword.Auto;
+                float headerOnly = 22f;
+                _detailsPane.style.height = open ? Mathf.Clamp(User.detailHeight, 80f, Mathf.Max(80f, h - 160f)) : headerOnly;
+            }
+
+            _dockButton.text = User.detailsDock == DetailsDock.Auto ? (side ? "Auto ▸" : "Auto ▾")
+                : User.detailsDock == DetailsDock.Right ? "Right" : "Bottom";
+            UpdateRail();
         }
 
         // ---------- Status bar ----------
@@ -1319,8 +1724,9 @@ namespace UtilityTools.AIConsole
             private void OnDown(PointerDownEvent e)
             {
                 if (!CanStartManipulation(e)) return;
-                _startY = e.position.y;
-                _startHeight = _window._details.resolvedStyle.height;
+                _startY = _window._sideDock ? e.position.x : e.position.y;
+                var pane = _window._detailsPane.resolvedStyle;
+                _startHeight = _window._sideDock ? pane.width : pane.height;
                 _active = true;
                 target.CapturePointer(e.pointerId);
                 e.StopPropagation();
@@ -1329,9 +1735,19 @@ namespace UtilityTools.AIConsole
             private void OnMove(PointerMoveEvent e)
             {
                 if (!_active || !target.HasPointerCapture(e.pointerId)) return;
-                float max = Mathf.Max(80f, _window.rootVisualElement.resolvedStyle.height - 140f);
-                float h = Mathf.Clamp(_startHeight - (e.position.y - _startY), 60f, max);
-                _window._details.style.height = h;
+                var root = _window.rootVisualElement.resolvedStyle;
+                if (_window._sideDock)
+                {
+                    // Details on the right: dragging left makes them wider.
+                    float max = Mathf.Max(220f, root.width - 240f);
+                    _window._detailsPane.style.width = Mathf.Clamp(_startHeight - (e.position.x - _startY), 220f, max);
+                }
+                else
+                {
+                    float max = Mathf.Max(80f, root.height - 160f);
+                    _window._detailsPane.style.height = Mathf.Clamp(_startHeight - (e.position.y - _startY), 80f, max);
+                }
+
                 e.StopPropagation();
             }
 
@@ -1340,7 +1756,8 @@ namespace UtilityTools.AIConsole
                 if (!_active || !CanStopManipulation(e)) return;
                 _active = false;
                 target.ReleasePointer(e.pointerId);
-                User.detailHeight = _window._details.resolvedStyle.height;
+                if (_window._sideDock) User.detailWidth = _window._detailsPane.resolvedStyle.width;
+                else User.detailHeight = _window._detailsPane.resolvedStyle.height;
                 SaveUser();
                 e.StopPropagation();
             }

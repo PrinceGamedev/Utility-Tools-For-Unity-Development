@@ -25,6 +25,7 @@ namespace UtilityTools.AIConsole
         private static bool s_WarnedIo;
         private static bool s_Flushing;
         private static bool s_RotatePending;
+        private static bool s_ReadmeChecked;
 
         public static string Folder
         {
@@ -114,6 +115,15 @@ namespace UtilityTools.AIConsole
                 {
                     s_RotatePending = false;
                     StartNewSessionFiles();
+                }
+
+                if (!s_ReadmeChecked)
+                {
+                    // Once per domain: keeps the read-me (versions, schema) current after package updates.
+                    s_ReadmeChecked = true;
+                    string readme = AIFormat.Readme(Folder);
+                    string path = Path.Combine(FullFolder, "AI-README.md");
+                    if (!File.Exists(path) || File.ReadAllText(path) != readme) TryWrite("AI-README.md", readme, atomic: true);
                 }
 
                 AppendSession();

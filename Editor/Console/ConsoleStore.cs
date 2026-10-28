@@ -87,6 +87,23 @@ namespace UtilityTools.AIConsole
 
         public static void ClearCompileIssues() => s_CompileIssues.Clear();
 
+        /// <summary>Adds one compiler message that arrived outside a CompilationPipeline callback.</summary>
+        public static void AddCompileIssue(ConsoleEntry e)
+        {
+            e.id = s_NextId++;
+            s_CompileIssues.Add(e);
+            Added?.Invoke(e);
+        }
+
+        public static bool HasCompileIssue(string file, int line, int column, string code)
+        {
+            foreach (var c in s_CompileIssues)
+                if (c.line == line && c.column == column && c.file == file &&
+                    StackTraceParser.CompilerCode(c.message) == code)
+                    return true;
+            return false;
+        }
+
         public static void Clear()
         {
             s_Entries.Clear();
@@ -192,16 +209,33 @@ namespace UtilityTools.AIConsole
                 ErrorCount = WarningCount = LogCount = 0;
 
                 if (snap.entries != null)
-                    foreach (var e in snap.entries) { s_Entries.Add(e); Count(e, +1); Group(e); }
+                    foreach (var e in snap.entries) { Normalize(e); s_Entries.Add(e); Count(e, +1); Group(e); }
                 foreach (var e in early) { e.id = s_NextId++; s_Entries.Add(e); Count(e, +1); Group(e); }
 
                 if (snap.compileIssues != null && s_CompileIssues.Count == 0)
-                    s_CompileIssues.AddRange(snap.compileIssues);
+                    foreach (var e in snap.compileIssues) { Normalize(e); s_CompileIssues.Add(e); }
             }
             catch (Exception e)
             {
                 Debug.LogWarning("[UtilityTools] AI Console could not restore its snapshot: " + e.Message);
             }
+        }
+
+        /// <summary>
+        /// JsonUtility writes null strings and arrays as "" / [] — restore nulls so "no system",
+        /// "no fingerprint" etc. mean the same after a domain reload as before it.
+        /// </summary>
+        internal static void Normalize(ConsoleEntry e)
+        {
+            if (e.system == "") e.system = null;
+            if (e.color == "") e.color = null;
+            if (e.fingerprint == "") e.fingerprint = null;
+            if (e.context == "") e.context = null;
+            if (e.scene == "") e.scene = null;
+            if (e.file == "") e.file = null;
+            if (e.stackTrace == "") e.stackTrace = null;
+            if (e.fieldKeys != null && e.fieldKeys.Length == 0) e.fieldKeys = null;
+            if (e.fieldValues != null && e.fieldValues.Length == 0) e.fieldValues = null;
         }
 
         public static void DeleteSnapshot()

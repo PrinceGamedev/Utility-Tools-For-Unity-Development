@@ -122,6 +122,7 @@ namespace UtilityTools.AIConsole
             bool pause = false;
             while (s_Queue.TryDequeue(out var p))
             {
+                if (TryHandleCompilerEcho(p)) continue;
                 var e = Build(p);
                 ConsoleStore.Add(e);
                 if (e.IsError && s_Playing && ConsoleUserSettings.instance.pauseOnError) pause = true;
@@ -129,6 +130,36 @@ namespace UtilityTools.AIConsole
 
             if (pause && EditorApplication.isPlaying) EditorApplication.isPaused = true;
             ConsoleStore.NotifyChanged();
+        }
+
+        /// <summary>
+        /// Unity re-prints compiler messages to the Console (e.g. after a domain reload). Those already
+        /// captured from CompilationPipeline are dropped; unseen ones (compiled before this package loaded)
+        /// become compile issues instead of plain warnings/errors.
+        /// </summary>
+        private static bool TryHandleCompilerEcho(Pending p)
+        {
+            if (p.Record != null || (p.Type != LogType.Warning && p.Type != LogType.Error)) return false;
+            if (!StackTraceParser.TryParseCompilerLine(p.Condition, out var file, out int line, out int column,
+                    out bool isError, out var code))
+                return false;
+
+            if (ConsoleStore.HasCompileIssue(file, line, column, code)) return true;
+
+            var kind = isError ? EntryKind.CompileError : EntryKind.CompileWarning;
+            var e = new ConsoleEntry
+            {
+                ticks = p.Ticks,
+                kind = kind,
+                message = p.Condition.TrimEnd(),
+                file = file,
+                line = line,
+                column = column,
+                frame = -1
+            };
+            e.fingerprint = StackTraceParser.Fingerprint(kind, file, e.message, null);
+            ConsoleStore.AddCompileIssue(e);
+            return true;
         }
 
         private static ConsoleEntry Build(Pending p)
@@ -316,8 +347,9 @@ namespace UtilityTools.AIConsole
             SessionState.EraseString(CompileStartKey);
 
             AddMarker(errors > 0
-                ? $"✖ Compilation failed — {errors} error(s)"
-                : string.Format(CultureInfo.InvariantCulture, "⟳ Scripts compiled ({0:0.0}s)", seconds));
+                // Plain text: the editor font has no glyph for ⟳ / ✖.
+                ? $"Compilation failed — {errors} error(s)"
+                : string.Format(CultureInfo.InvariantCulture, "Scripts compiled ({0:0.0}s)", seconds));
         }
 
         private static void OnBeforeAssemblyReload()

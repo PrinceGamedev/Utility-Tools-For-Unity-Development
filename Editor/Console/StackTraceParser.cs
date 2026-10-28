@@ -44,6 +44,33 @@ namespace UtilityTools.AIConsole
 
         private static readonly char[] LineBreak = { '\n' };
 
+        // "Assets\Foo.cs(12,5): warning CS0618: text" — how Unity prints compiler messages to the Console.
+        private static readonly Regex CompilerLine = new Regex(
+            @"^(?<file>[^\r\n]+?)\((?<line>\d+),(?<col>\d+)\): (?<sev>warning|error) (?<code>[A-Za-z]+\d+): ",
+            RegexOptions.Compiled);
+
+        private static readonly Regex CompilerCodeRx = new Regex(@"\b(?:warning|error) (?<code>[A-Za-z]+\d+):", RegexOptions.Compiled);
+
+        /// <summary>Parses a Console line that is a compiler message (Unity echoes these after a reload).</summary>
+        internal static bool TryParseCompilerLine(string message, out string file, out int line, out int column,
+            out bool isError, out string code)
+        {
+            var m = string.IsNullOrEmpty(message) ? Match.Empty : CompilerLine.Match(message);
+            file = m.Success ? NormalizePath(m.Groups["file"].Value) : null;
+            line = m.Success ? int.Parse(m.Groups["line"].Value) : 0;
+            column = m.Success ? int.Parse(m.Groups["col"].Value) : 0;
+            isError = m.Success && m.Groups["sev"].Value == "error";
+            code = m.Success ? m.Groups["code"].Value : null;
+            return m.Success;
+        }
+
+        /// <summary>"CS0618" from a compiler message, or null.</summary>
+        internal static string CompilerCode(string message)
+        {
+            var m = string.IsNullOrEmpty(message) ? Match.Empty : CompilerCodeRx.Match(message);
+            return m.Success ? m.Groups["code"].Value : null;
+        }
+
         private static string s_ProjectRoot;
 
         private static string ProjectRoot =>

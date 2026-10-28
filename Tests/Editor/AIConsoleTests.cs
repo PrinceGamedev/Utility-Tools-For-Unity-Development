@@ -87,6 +87,31 @@ namespace UtilityTools.Tests
         }
 
         [Test]
+        public void TryParseCompilerLine_ReadsUnityCompilerEcho()
+        {
+            Assert.IsTrue(StackTraceParser.TryParseCompilerLine(
+                "Assets\\GameAnalytics\\Editor\\GA_Menu.cs(33,17): warning CS0618: 'X' is obsolete",
+                out var file, out int line, out int col, out bool isError, out var code));
+            Assert.AreEqual("Assets/GameAnalytics/Editor/GA_Menu.cs", file);
+            Assert.AreEqual(33, line);
+            Assert.AreEqual(17, col);
+            Assert.IsFalse(isError);
+            Assert.AreEqual("CS0618", code);
+
+            Assert.IsTrue(StackTraceParser.TryParseCompilerLine("Assets/A.cs(1,2): error CS1002: ; expected",
+                out _, out _, out _, out isError, out _));
+            Assert.IsTrue(isError);
+            Assert.IsFalse(StackTraceParser.TryParseCompilerLine("Plain warning (1,2) text", out _, out _, out _, out _, out _));
+        }
+
+        [Test]
+        public void CompilerCode_FindsCode()
+        {
+            Assert.AreEqual("CS0618", StackTraceParser.CompilerCode("Assets/A.cs(1,2): warning CS0618: x"));
+            Assert.IsNull(StackTraceParser.CompilerCode("no code here"));
+        }
+
+        [Test]
         public void Fingerprint_IgnoresLineNumberChanges()
         {
             var before = StackTraceParser.Parse("Spawner:Spawn (int) (at Assets/Scripts/Spawner.cs:42)\n");
@@ -147,6 +172,19 @@ namespace UtilityTools.Tests
             string json = AIFormat.JsonLine(e);
             StringAssert.Contains("\"msg\":\"error CS1002: ; expected\"", json);
             StringAssert.Contains("\"file\":\"Assets/Foo.cs\",\"line\":12,\"col\":5", json);
+        }
+
+        [Test]
+        public void Normalize_RestoresNullsAfterJsonRoundTrip()
+        {
+            // JsonUtility writes null strings/arrays as ""/[] in the domain-reload snapshot.
+            var e = new ConsoleEntry { system = "", fingerprint = "", context = "", fieldKeys = new string[0], fieldValues = new string[0] };
+            ConsoleStore.Normalize(e);
+            Assert.IsNull(e.system);
+            Assert.IsNull(e.fingerprint);
+            Assert.IsNull(e.context);
+            Assert.AreEqual(0, e.FieldCount);
+            StringAssert.DoesNotContain("\"sys\"", AIFormat.JsonLine(e));
         }
 
         [Test]

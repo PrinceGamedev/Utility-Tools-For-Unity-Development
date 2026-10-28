@@ -95,8 +95,17 @@ namespace UtilityTools.AIConsole
             Added?.Invoke(e);
         }
 
+        // Compile warnings removed by Clear, so Unity's re-printed copies don't bring them back.
+        // Forgotten when the next compilation starts — a real recompile reports them again (like Unity).
+        private static readonly HashSet<string> s_DismissedCompile = new HashSet<string>();
+
+        private static string CompileKey(string file, int line, int column, string code) =>
+            file + "|" + line + "|" + column + "|" + code;
+
+        /// <summary>True when this compiler message is already listed or was cleared since the last compile.</summary>
         public static bool HasCompileIssue(string file, int line, int column, string code)
         {
+            if (s_DismissedCompile.Contains(CompileKey(file, line, column, code))) return true;
             foreach (var c in s_CompileIssues)
                 if (c.line == line && c.column == column && c.file == file &&
                     StackTraceParser.CompilerCode(c.message) == code)
@@ -104,11 +113,26 @@ namespace UtilityTools.AIConsole
             return false;
         }
 
+        public static void ForgetDismissedCompileIssues() => s_DismissedCompile.Clear();
+
+        /// <summary>
+        /// Clears the session like Unity's Console: logs and compile warnings go, compile errors stay
+        /// (they still block Play Mode until fixed).
+        /// </summary>
         public static void Clear()
         {
             s_Entries.Clear();
             s_Groups.Clear();
             ErrorCount = WarningCount = LogCount = 0;
+
+            for (int i = s_CompileIssues.Count - 1; i >= 0; i--)
+            {
+                var c = s_CompileIssues[i];
+                if (c.kind != EntryKind.CompileWarning) continue;
+                s_DismissedCompile.Add(CompileKey(c.file, c.line, c.column, StackTraceParser.CompilerCode(c.message)));
+                s_CompileIssues.RemoveAt(i);
+            }
+
             Cleared?.Invoke();
             NotifyChanged();
         }

@@ -303,6 +303,7 @@ namespace UtilityTools.AIConsole
         private static void OnCompilationStarted(object _)
         {
             s_CompileBuffer.Clear();
+            ConsoleStore.ForgetDismissedCompileIssues();
             ConsoleStore.Compile = ConsoleStore.CompileState.Compiling;
             SessionState.SetString(CompileStartKey, DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
             ConsoleStore.NotifyChanged();

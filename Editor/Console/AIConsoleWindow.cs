@@ -222,7 +222,11 @@ namespace UtilityTools.AIConsole
             bar.AddToClassList("aic-toolbar");
 
             var clear = new ToolbarButton(() => ConsoleCapture.ClearAll("cleared by user"))
-                { text = "Clear", tooltip = "Clear the console. AI files keep the history." };
+                {
+                    text = "Clear",
+                    tooltip = "Clear logs and compile warnings (compile errors stay until fixed, like Unity).\n" +
+                              "AI files keep the history."
+                };
             clear.AddToClassList("aic-toolbar__fixed");
             bar.Add(clear);
 

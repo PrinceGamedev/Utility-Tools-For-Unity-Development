@@ -188,6 +188,38 @@ namespace UtilityTools.Tests
         }
 
         [Test]
+        public void Clear_RemovesCompileWarningsButKeepsErrors_UntilNextCompile()
+        {
+            ConsoleStore.ClearCompileIssues();
+            ConsoleStore.ForgetDismissedCompileIssues();
+            try
+            {
+                ConsoleStore.SetCompileIssues(new System.Collections.Generic.List<ConsoleEntry>
+                {
+                    new ConsoleEntry { kind = EntryKind.CompileWarning, file = "Assets/A.cs", line = 1, column = 2,
+                        message = "Assets/A.cs(1,2): warning CS0618: x" },
+                    new ConsoleEntry { kind = EntryKind.CompileError, file = "Assets/B.cs", line = 3, column = 4,
+                        message = "Assets/B.cs(3,4): error CS1002: ; expected" }
+                });
+
+                ConsoleStore.Clear();
+
+                Assert.AreEqual(1, ConsoleStore.CompileIssues.Count, "only the error remains");
+                Assert.AreEqual(EntryKind.CompileError, ConsoleStore.CompileIssues[0].kind);
+                Assert.IsTrue(ConsoleStore.HasCompileIssue("Assets/A.cs", 1, 2, "CS0618"),
+                    "a cleared warning is still recognised, so Unity's re-printed copy is dropped");
+
+                ConsoleStore.ForgetDismissedCompileIssues(); // what a new compilation does
+                Assert.IsFalse(ConsoleStore.HasCompileIssue("Assets/A.cs", 1, 2, "CS0618"));
+            }
+            finally
+            {
+                ConsoleStore.ClearCompileIssues();
+                ConsoleStore.ForgetDismissedCompileIssues();
+            }
+        }
+
+        [Test]
         public void Clip_AddsEllipsisOnlyWhenTooLong()
         {
             Assert.AreEqual("abc", AIFormat.Clip("abc", 5));

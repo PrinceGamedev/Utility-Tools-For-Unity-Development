@@ -16,6 +16,8 @@ All notable changes to this package are documented here. Both the package and ea
   - Type toggles with live counts, system chips (click to filter, right-click to mute for yourself),
     Collapse, Follow, Error Pause, Clear on Play, sort by time / newest / severity / count / system / message.
   - Pinned compile errors with a banner; "Compiling…" banner while scripts build.
+  - Clear behaves like Unity's: logs and compile warnings go (until the next compile reports them
+    again); compile errors stay until fixed.
   - Session timeline of errors / warnings / logs — click a bar to jump there.
   - Details pane: selectable message, fields, context object (click to select it), stack trace with
     your code highlighted and engine frames folded, exception chains, and inline source preview.

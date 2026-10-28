@@ -18,7 +18,7 @@ namespace UtilityTools.AIConsole
 
     internal enum ChannelOverride { Default, On, Off }
 
-    /// <summary>A custom tag colour, e.g. UI → blue (team setting).</summary>
+    /// <summary>A tag colour picked in the window by 1.3.0; tags are now defined in code (LogTag).</summary>
     [Serializable]
     internal sealed class TagSetting
     {
@@ -54,6 +54,11 @@ namespace UtilityTools.AIConsole
         public int aiTopGroups = 10;
         public int aiUserFrames = 3;
 
+        // AI agents: commands.txt and the managed section in CLAUDE.md / AGENTS.md
+        public bool aiCommandsEnabled = true;
+        public bool aiAllowMenuCommands;
+        public bool agentAutoUpdate = true;
+
         public static event Action Changed;
 
         public void SaveAndNotify()
@@ -74,14 +79,6 @@ namespace UtilityTools.AIConsole
             for (int i = 0; i < tags.Count; i++)
                 if (string.Equals(tags[i].name, tag, StringComparison.OrdinalIgnoreCase)) return tags[i];
             return null;
-        }
-
-        /// <summary>Adds or recolours a custom tag.</summary>
-        public void SetTagColor(string tag, string colorHex)
-        {
-            var t = FindTag(tag);
-            if (t == null) tags.Add(t = new TagSetting { name = tag.Trim() });
-            t.color = LogChannel.NormalizeHex(colorHex);
         }
 
         public ChannelSetting GetOrAdd(string channel)
@@ -129,7 +126,9 @@ namespace UtilityTools.AIConsole
         // Tag filter (persisted): selected tags and whether a log must have all of them or any.
         public List<string> tagFilter = new List<string>();
         public bool tagMatchAll;
-        public bool tagEditorOpen;
+
+        /// <summary>"Not now" on the AI agent setup card.</summary>
+        public bool agentSetupDismissed;
         public string search = "";
         public bool showLog = true, showWarning = true, showError = true;
         public string sortMode = "time";
@@ -193,7 +192,8 @@ namespace UtilityTools.AIConsole
             foreach (var t in project.tags)
                 if (!string.IsNullOrEmpty(t.name) && !string.IsNullOrEmpty(t.color)) colors[t.name] = LogChannel.NormalizeHex(t.color);
             s_TagColors = colors;
-            ULog.TagColor = tag => s_TagColors.TryGetValue(tag, out var c) ? c : LogChannel.ColorFromName(tag);
+            ULog.TagColor = tag => LogTag.Find(tag)?.ColorHex ??
+                                   (s_TagColors.TryGetValue(tag, out var c) ? c : LogChannel.ColorFromName(tag));
 
             foreach (var channel in LogChannel.All) Apply(channel);
         }
@@ -214,12 +214,15 @@ namespace UtilityTools.AIConsole
         }
 
         /// <summary>
-        /// Colour for a tag or system: custom tag colour, else configured channel colour, else the live
-        /// channel's colour, else a stable colour generated from the name.
+        /// Colour for a tag or system: the <see cref="LogTag"/> defined in code, else an older colour from
+        /// project settings, else the configured channel colour, else the live channel's colour, else a
+        /// stable colour generated from the name.
         /// </summary>
         public static string ColorFor(string system)
         {
             if (string.IsNullOrEmpty(system)) return null;
+            var code = LogTag.Find(system);
+            if (code != null) return code.ColorHex;
             var tag = ConsoleProjectSettings.instance.FindTag(system);
             if (!string.IsNullOrEmpty(tag?.color)) return LogChannel.NormalizeHex(tag.color);
             var s = ConsoleProjectSettings.instance.Find(system);

@@ -54,13 +54,18 @@ Unity's Console with one capture pipeline and two readers:
   `fp:<fingerprint>`, `file:Spawner.cs`, `/regex/`.
 - **Filtering:** type toggles with live counts (Log / Warning / Error), combined with the tag bar.
 - **Tags:**
+  - **Defined once in code** with their colour (`LogTag`, see ULog below) and used anywhere. No colour
+    editing in the window: the code is the single source.
   - **A log can have several tags:** its ULog system, every leading `[Tag]` in the message
-    (`Debug.Log("[UI][Network] …")`), and `Spawn.Tagged("UI", "Boss").Info(…)`.
-  - **Filtering:** click one or more tag chips. With several selected, choose **Any** (the log has at
+    (`Debug.Log($"{Tags.UI}{Tags.GAEvents} …")` or a hand-written `"[UI] …"`), and
+    `Spawn.Tagged(Tags.UI, Tags.Boss).Info(…)`.
+  - **Tags bar:** every tag as a coloured chip, in the same style as on the rows, with its log count
+    (and a red error count). Tags defined in code are listed even before they are used.
+  - **Filtering:** click one or more chips. With several selected, choose **Any** (the log has at
     least one of them) or **All** (it has every one).
-  - **Edit tags** opens an inline editor: add tags and pick their colours, e.g. `UI` → blue. The colours
-    are shared with the team in `ProjectSettings/`.
   - Right-click a system chip → *Mute for me*.
+- **Rows** are columns: time, tags (one width for all rows, so messages line up), message, fields,
+  `File.cs:line` for compile messages, `#id`.
 - **Text size:** the strip's A− / A+ buttons, or `Ctrl/Cmd` + `=` / `-` / `0`. It scales rows,
   details, chips and the strip.
 - **Toolbar:** Clear, Collapse, search, and the type counts.
@@ -88,18 +93,53 @@ Unity's Console with one capture pipeline and two readers:
   - The layout adapts to narrow windows and is remembered per user.
 - History survives script reloads.
 
-### Pointing an AI agent at it
+### Let AI agents use it — one-time setup
 
 The files are plain text, so an agent reads them with normal file tools. There's no MCP server and
-no tool schemas sitting in the agent's context. Add this to your project's `CLAUDE.md` / `AGENTS.md`:
+no tool schemas sitting in the agent's context.
 
-```markdown
-## Unity Editor state
-Read `Logs/AIConsole/status.txt` first (one line). If it shows errors or compile-failed, read
-`Logs/AIConsole/errors.md`. For one entry, search `Logs/AIConsole/session.jsonl` for `"id":<n>`.
-After editing scripts, wait until status shows `compile=ok` with a newer `compiled_at`.
-Schema: `Logs/AIConsole/AI-README.md`.
+**Set up once, then never explain it again.** The AI Console shows a *Let AI agents use this console*
+card; press **Set up**. It writes a short managed section (~350 tokens) into the agent instruction
+files your project already has, or creates `CLAUDE.md` + `AGENTS.md`. Agents read those files at the
+start of every session, so they know how to:
+- read Unity's state (`status.txt` → `errors.md` → `session.jsonl`);
+- drive the Editor through `commands.txt` (compile, play, stop, clear, markers);
+- ask you for help in the AI Console when they need you.
+
+Supported files: `CLAUDE.md` (Claude Code), `AGENTS.md` (Codex, Cursor, Copilot, Jules, Aider…),
+`GEMINI.md`, `.github/copilot-instructions.md`, `.cursor/rules/unity-ai-console.mdc`. Manage them in
+**Project Settings → Utility Tools → AI Console → AI agents**. Only the text between the
+`<!-- utilitytools:ai-console:begin … -->` / `end` markers is ever written; the rest of the file is
+yours. The section updates itself after package updates. Commit the files so the whole team gets it.
+
+### Driving the Editor — `commands.txt`
+
+An agent writes commands, one per line, to `Logs/AIConsole/commands.txt`. Unity takes the file, runs
+them in order and writes `results.txt`:
+
 ```
+refresh          import + compile after editing scripts
+compile all      clean rebuild of every assembly
+play / stop      enter / leave Play Mode          wait 5     wait between steps
+clear            clear the console                mark run 2 add a marker to bracket a test
+show 812         open the console on entry #812   status     end with the status line
+ask Start level 3 and drop a block on the edge — then press Done
+```
+
+```
+state=done batch=4 picked_up=2026-10-28T12:01:30.511Z
+#1 refresh -> done: compiled (3.2s)
+#2 play -> done: mode=play (1.4s)
+#3 wait 5 -> done: waited 5s
+#4 stop -> done: mode=edit (0.6s)
+status: state=errors mode=edit compile=ok … errors=2 warnings=0 last_id=231 …
+```
+
+`ask` shows a card at the top of the AI Console with **Done** / **Can't do it** and an optional note.
+The answer goes back to the agent with the ids of the logs written while you did it, so it reads
+exactly the reproduction and nothing else. Commands work while Unity is in the background, though
+the OS may throttle it; if a command isn't picked up, the agent asks you to click the Unity window.
+`menu <path>` (run any menu item) is off unless you allow it in Project Settings.
 
 Example `status.txt`:
 ```
@@ -110,6 +150,7 @@ Settings: **Project Settings → Utility Tools → AI Console**. This page holds
 - systems and their colours;
 - release-build switches;
 - the AI files' folder, digest size and rotation;
+- AI agent files and commands;
 - the history size.
 
 ---
@@ -132,9 +173,28 @@ Systems.Spawn.Exception(e, this);
 Systems.Spawn.Info(() => ExpensiveDump());   // lazy: only built when Spawn is on
 Systems.Spawn.Assert(wave > 0, "Wave must be positive");
 Systems.Spawn.InfoOnce("Only the first time this line runs");
-Systems.Spawn.Tagged("UI", "Boss").Info("Boss bar shown");  // extra tags → [Spawn][UI][Boss]
 ULog.Info("Quick log without a system");
 ```
+
+### Tags — defined once, used anywhere
+
+```csharp
+public static class Tags   // keep all tags in one static class
+{
+    public static readonly LogTag UI             = new LogTag("UI", "#4FC3F7");
+    public static readonly LogTag GAEvents       = new LogTag("GAEvents", "#F2C14E");
+    public static readonly LogTag ProfilePicture = new LogTag("ProfilePicture", "#B388FF");
+}
+
+Debug.Log($"{Tags.GAEvents}{Tags.ProfilePicture} Uploaded");   // → "[GAEvents][ProfilePicture] Uploaded"
+Systems.Spawn.Tagged(Tags.UI, Tags.GAEvents).Info("Boss bar shown");  // → [Spawn][UI][GAEvents]
+ULog.Tagged(Tags.UI).Warning("Tap ignored");
+```
+
+The colour lives with the tag, so it is the same in the AI Console, its tags bar and Unity's Console.
+The AI Console finds a static class of `LogTag`s on its own and lists those tags before any log uses
+them. Names match without case (`[ui]` is `UI`). Project Settings → Utility Tools → AI Console → *Tags*
+lists every tag and where it is defined.
 
 | | Editor | Development build | Release build |
 |---|---|---|---|
@@ -277,14 +337,14 @@ To pin a specific version, append a release tag (see the repo's
 [Tags](https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development/tags)) or a commit hash:
 
 ```
-https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.3.0
+https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.4.0
 ```
 
 ### Versions
 
 There are two kinds of version:
-- **The package version** (e.g. `1.3.0`) is what you install and pin.
-- **Each feature has its own version** (AI Console 1.0.0, ULog 1.0.0, `[Button]` 2.0.0, …). It changes
+- **The package version** (e.g. `1.4.0`) is what you install and pin.
+- **Each feature has its own version** (AI Console 1.1.0, ULog 1.0.0, `[Button]` 2.0.0, …). It changes
   only when that feature changes. In `CHANGELOG.md`, each release lists its changes under the features
   they affect, so you can see whether a release touches the tools you use.
 

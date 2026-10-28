@@ -17,17 +17,20 @@ namespace UtilityTools.AIConsole
         private const string DefineStripErrors = "UTILITYTOOLS_STRIP_ERRORS";
         private const string DefineSilence = "UTILITYTOOLS_SILENCE_UNITY_LOGS";
 
+        internal const string SettingsPath = "Project/Utility Tools/AI Console";
+
         private static Vector2 s_Scroll;
 
         [SettingsProvider]
         private static SettingsProvider Create() =>
-            new SettingsProvider("Project/Utility Tools/AI Console", SettingsScope.Project)
+            new SettingsProvider(SettingsPath, SettingsScope.Project)
             {
                 label = "AI Console",
                 guiHandler = _ => Draw(),
                 keywords = new HashSet<string>(new[]
                 {
-                    "log", "logging", "ULog", "channel", "system", "console", "AI", "strip", "release", "define"
+                    "log", "logging", "ULog", "channel", "system", "console", "AI", "strip", "release", "define",
+                    "agent", "CLAUDE.md", "AGENTS.md", "Cursor", "Copilot", "commands"
                 })
             };
 
@@ -56,6 +59,7 @@ namespace UtilityTools.AIConsole
             EditorGUI.BeginChangeCheck();
             DrawCapture(project);
             DrawAI(project);
+            DrawAgents(project);
             projectChanged |= EditorGUI.EndChangeCheck();
 
             if (projectChanged) project.SaveAndNotify();
@@ -157,24 +161,70 @@ namespace UtilityTools.AIConsole
         }
 
         // ---------- Tags ----------
-        private static string s_NewTag = "";
-        private static Color s_NewTagColor = new Color(0.35f, 0.63f, 1f);
+        private const string TagExample =
+            "using UtilityTools.Logging;\n\n" +
+            "public static class Tags\n" +
+            "{\n" +
+            "    public static readonly LogTag UI = new LogTag(\"UI\", \"#4FC3F7\");\n" +
+            "    public static readonly LogTag GAEvents = new LogTag(\"GAEvents\", \"#F2C14E\");\n" +
+            "}\n\n" +
+            "// Anywhere:\n" +
+            "Debug.Log($\"{Tags.UI}{Tags.GAEvents} Level start sent\");\n" +
+            "Systems.Ads.Tagged(Tags.UI).Info(\"Banner shown\");";
 
         private static void DrawTags(ConsoleProjectSettings s)
         {
-            Header("Tags", "Custom tag colours, e.g. UI → blue. Logs get tags from [UI] prefixes, " +
-                           "Tagged(\"UI\") and their system. Also editable in the AI Console (Tags bar → Edit tags).");
+            Header("Tags", "Tags and their colours are defined once in code (LogTag) and used anywhere. " +
+                           "The AI Console finds them automatically and lists them in its tags bar.");
 
+            var tags = LogTag.All;
+            if (tags.Count == 0)
+            {
+                EditorGUILayout.HelpBox("No LogTags defined yet. Put them in one static class:", MessageType.None);
+            }
+            else
+            {
+                foreach (var tag in tags.OrderBy(t => t.Name, StringComparer.OrdinalIgnoreCase))
+                {
+                    using (new EditorGUILayout.HorizontalScope())
+                    {
+                        var rect = GUILayoutUtility.GetRect(14, 14, GUILayout.Width(14), GUILayout.Height(14));
+                        rect.y += 2;
+                        ColorUtility.TryParseHtmlString(tag.ColorHex, out var c);
+                        EditorGUI.DrawRect(rect, c);
+                        GUILayout.Label(tag.Name, EditorStyles.boldLabel, GUILayout.Width(160));
+                        GUILayout.Label(tag.ColorHex, EditorStyles.miniLabel, GUILayout.Width(70));
+                        LogTagDiscovery.Declarations.TryGetValue(tag.Name, out var where);
+                        GUILayout.Label(where ?? "", EditorStyles.miniLabel);
+                    }
+                }
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button(new GUIContent("Copy example", "Copy a Tags class to paste into your project"), GUILayout.Width(120)))
+                    EditorGUIUtility.systemCopyBuffer = TagExample;
+                if (GUILayout.Button(new GUIContent("Find tags", "Look for LogTags in the project's code again"), GUILayout.Width(120)))
+                    LogTagDiscovery.Run();
+            }
+
+            if (s.tags.Count == 0) return;
+
+            // Colours picked in the window by version 1.3.0. Tags defined in code take priority.
+            EditorGUILayout.Space(4);
+            EditorGUILayout.LabelField("Older colours set in the window (a LogTag with the same name wins)", EditorStyles.miniLabel);
             string remove = null;
             foreach (var tag in s.tags)
             {
                 using (new EditorGUILayout.HorizontalScope())
                 {
+                    var rect = GUILayoutUtility.GetRect(14, 14, GUILayout.Width(14), GUILayout.Height(14));
+                    rect.y += 2;
                     ColorUtility.TryParseHtmlString(tag.color, out var c);
-                    var next = EditorGUILayout.ColorField(GUIContent.none, c, false, false, false, GUILayout.Width(70));
-                    if (next != c) tag.color = "#" + ColorUtility.ToHtmlStringRGB(next);
-                    GUILayout.Label(tag.name, GUILayout.Width(150));
-                    if (GUILayout.Button(new GUIContent("×", "Remove this tag colour"), GUILayout.Width(22))) remove = tag.name;
+                    EditorGUI.DrawRect(rect, c);
+                    GUILayout.Label(tag.name, GUILayout.Width(160));
+                    GUILayout.Label(tag.color, EditorStyles.miniLabel, GUILayout.Width(70));
+                    if (GUILayout.Button(new GUIContent("×", "Forget this colour"), GUILayout.Width(22))) remove = tag.name;
                 }
             }
 
@@ -182,21 +232,6 @@ namespace UtilityTools.AIConsole
             {
                 s.tags.RemoveAll(t => t.name == remove);
                 GUI.changed = true;
-            }
-
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                s_NewTagColor = EditorGUILayout.ColorField(GUIContent.none, s_NewTagColor, false, false, false, GUILayout.Width(70));
-                s_NewTag = EditorGUILayout.TextField(s_NewTag, GUILayout.Width(150));
-                using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(s_NewTag)))
-                {
-                    if (GUILayout.Button("Add tag", GUILayout.Width(80)))
-                    {
-                        s.SetTagColor(s_NewTag.Trim().Trim('[', ']'), "#" + ColorUtility.ToHtmlStringRGB(s_NewTagColor));
-                        s_NewTag = "";
-                        GUI.changed = true;
-                    }
-                }
             }
         }
 
@@ -302,6 +337,95 @@ namespace UtilityTools.AIConsole
                     if (GUILayout.Button("Write now", GUILayout.Width(120))) AIBridge.Flush(true);
                 }
             }
+        }
+
+        // ---------- AI agents ----------
+        private static AgentFileState[] s_AgentStates;
+        private static double s_AgentStatesAt = -10;
+        private static bool s_ShowSection;
+        private static GUIStyle s_OkStyle, s_WarnStyle;
+
+        private static void DrawAgents(ConsoleProjectSettings s)
+        {
+            Header("AI agents",
+                "A short managed section in agent instruction files tells AI agents how to read these files and drive Unity " +
+                "through commands.txt, so you don't have to explain it. Only text between the Utility Tools markers is written. " +
+                "Commit the files to share them with the team.");
+
+            if (s_AgentStates == null || EditorApplication.timeSinceStartup - s_AgentStatesAt > 2) RefreshAgentStates();
+            if (s_OkStyle == null)
+            {
+                s_OkStyle = new GUIStyle(EditorStyles.label) { normal = { textColor = new Color(0.30f, 0.76f, 0.54f) } };
+                s_WarnStyle = new GUIStyle(EditorStyles.label) { normal = { textColor = new Color(0.95f, 0.76f, 0.31f) } };
+            }
+
+            for (int i = 0; i < AgentSetup.Targets.Length; i++)
+            {
+                var t = AgentSetup.Targets[i];
+                var state = s_AgentStates[i];
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.LabelField(new GUIContent(t.Path, "Read by " + t.Agents), GUILayout.Width(250));
+                    switch (state)
+                    {
+                        case AgentFileState.Installed: GUILayout.Label("installed", s_OkStyle, GUILayout.Width(110)); break;
+                        case AgentFileState.Outdated: GUILayout.Label("outdated", s_WarnStyle, GUILayout.Width(110)); break;
+                        case AgentFileState.NotInstalled: GUILayout.Label("not added", EditorStyles.miniLabel, GUILayout.Width(110)); break;
+                        default: GUILayout.Label("no file", EditorStyles.miniLabel, GUILayout.Width(110)); break;
+                    }
+
+                    bool has = state == AgentFileState.Installed || state == AgentFileState.Outdated;
+                    if (state == AgentFileState.Outdated && GUILayout.Button("Update", GUILayout.Width(80))) Act(() => AgentSetup.Install(t));
+                    if (!has && GUILayout.Button(new GUIContent(state == AgentFileState.NoFile ? "Create" : "Add",
+                            "Write the section into " + t.Path), GUILayout.Width(80)))
+                        Act(() => AgentSetup.Install(t));
+                    if (has && GUILayout.Button(new GUIContent("Remove", "Remove only the managed section"), GUILayout.Width(80)))
+                        Act(() => AgentSetup.Uninstall(t));
+                    GUILayout.FlexibleSpace();
+                }
+            }
+
+            EditorGUILayout.Space(4);
+            s.agentAutoUpdate = EditorGUILayout.Toggle(new GUIContent("Keep sections up to date",
+                "After a package update or a folder change, refresh sections that are already there. " +
+                "Files without the section are never touched."), s.agentAutoUpdate);
+            s.aiCommandsEnabled = EditorGUILayout.Toggle(new GUIContent("Accept commands (commands.txt)",
+                "Agents can import and compile, clear, enter and leave Play Mode, add markers, show entries and ask you for help."),
+                s.aiCommandsEnabled);
+            using (new EditorGUI.DisabledScope(!s.aiCommandsEnabled))
+                s.aiAllowMenuCommands = EditorGUILayout.Toggle(new GUIContent("Allow menu commands",
+                    "`menu <path>` runs any Editor menu item. Off by default."), s.aiAllowMenuCommands);
+
+            s_ShowSection = EditorGUILayout.Foldout(s_ShowSection, "Preview section", true);
+            if (s_ShowSection)
+            {
+                string text = AgentBlock.Build(AIBridge.Folder);
+                var style = new GUIStyle(EditorStyles.textArea) { wordWrap = true, fontSize = 11 };
+                float width = EditorGUIUtility.currentViewWidth - 40;
+                EditorGUILayout.SelectableLabel(text, style, GUILayout.Height(style.CalcHeight(new GUIContent(text), width)));
+                if (GUILayout.Button("Copy", GUILayout.Width(80))) EditorGUIUtility.systemCopyBuffer = text;
+            }
+
+            if (ConsoleUserSettings.instance.agentSetupDismissed &&
+                GUILayout.Button("Show the setup card in the AI Console again", GUILayout.Width(300)))
+            {
+                ConsoleUserSettings.instance.agentSetupDismissed = false;
+                ConsoleUserSettings.instance.SaveAndNotify();
+            }
+        }
+
+        private static void Act(Func<bool> action)
+        {
+            action();
+            RefreshAgentStates();
+            GUIUtility.ExitGUI();
+        }
+
+        private static void RefreshAgentStates()
+        {
+            s_AgentStates = new AgentFileState[AgentSetup.Targets.Length];
+            for (int i = 0; i < s_AgentStates.Length; i++) s_AgentStates[i] = AgentSetup.StateOf(AgentSetup.Targets[i]);
+            s_AgentStatesAt = EditorApplication.timeSinceStartup;
         }
 
         private static void Header(string title, string help)

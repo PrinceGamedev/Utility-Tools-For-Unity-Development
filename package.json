@@ -1,6 +1,6 @@
 {
   "name": "com.gameyogi.utilitytools",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "displayName": "Utility Tools",
   "description": "A lightweight set of Unity Editor productivity tools: AI Console (a Console replacement that writes token-lean status / issues / JSONL files AI agents can read), ULog per-system logging that compiles out of release builds, inspector [Button] attribute for MonoBehaviours and ScriptableObjects, scene switcher overlay, inspector lock, play-from-bootstrap, live time-scale control, and one-click settings / asset shortcuts.",
   "unity": "2021.3",

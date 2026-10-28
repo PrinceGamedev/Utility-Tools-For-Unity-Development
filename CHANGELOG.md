@@ -6,6 +6,52 @@ All notable changes to this package are documented here. Both the package and ea
 `## [x.y.z]` is the **package** release you install. Inside each release, `### Feature x.y.z` is that
 **feature's** own version; features not listed are unchanged.
 
+## [1.4.0] - 2026-10-28
+
+### AI Console 1.1.0
+- **One-time AI agent setup.** A *Let AI agents use this console* card (and Project Settings ›
+  Utility Tools › AI Console › AI agents) writes a short managed section into `CLAUDE.md`,
+  `AGENTS.md`, `GEMINI.md`, `.github/copilot-instructions.md` or a Cursor rule. Agents then know how
+  to read Unity's state, drive the Editor and ask for help, without being told each session.
+  - One click uses the agent files the project already has, or creates `CLAUDE.md` + `AGENTS.md`.
+  - Only text between the `utilitytools:ai-console` markers is written; line endings and BOM are kept.
+  - Installed sections update themselves after package updates or an AI folder change (can be turned
+    off); files without the section are never touched.
+- **Editor commands for agents** — `commands.txt` → `results.txt` in the AI folder: `refresh`,
+  `compile`, `clear`, `play`, `stop`, `pause`, `resume`, `wait <s>`, `mark <label>`, `show <id>`,
+  `ask <text>`, `status`, `help`, and `menu <path>` (off by default). Runs in order, reports timing
+  and compile results, ends with the status line, and survives compiles and entering Play Mode.
+- **Requests from the agent** — `ask` shows a card in the AI Console with *Done* / *Can't do it* and a
+  note. The answer reports the ids and counts of the logs written meanwhile, and markers bracket the
+  request in the log.
+- `status.txt` shows `ask=pending` / `commands=running`; `AI-README.md` documents the commands.
+- **Tags come from code.** The tags bar shows every tag as a coloured chip in the row-tag style, with
+  its log count and error count; tags defined with `LogTag` are listed before they are used. The
+  inline colour editor and *Edit tags* are gone; Project Settings › Tags lists the tags defined in
+  code and where. Colours picked in 1.3.0 still apply until a `LogTag` with the same name exists.
+- **Rows are columns:** time in a monospace font sized to the text size, a tag column with one
+  width for all rows (messages line up), one font size across the row, hairlines between rows, and
+  `File.cs:line` on the right for compile messages.
+- **Stack traces read better:** `Class.Method` and `File.cs:line`; full names and paths in tooltips.
+- **Details pane redesigned:** padded layout; a meta line (kind, compiler code linking to its docs,
+  `#id`, time, Play/Edit · scene, frame); the message as a bold title (compiler messages without the
+  path and code prefix) with the rest below; tags; actions at the top (*Open File.cs:line* first,
+  Copy, Copy for AI, JSON, Similar); Location / Fields / Context / Stack trace / Source as separated
+  sections; the source preview with a file header, common indentation removed and the line marked.
+
+### Fixes
+- AI Console: the tags bar could stay empty after a script reload (cached UI state survived the reload).
+- AI Console: compile warnings disappeared when only some assemblies recompiled (e.g. after editing one
+  package). Each compile message now remembers its assembly; a compile replaces only the messages of
+  the assemblies it rebuilt, like Unity's Console. Messages whose file was deleted are dropped.
+- Agent command `compile all`: a clean rebuild of every assembly.
+
+### ULog 1.1.0
+- `LogTag` — a tag with its colour, defined once (`public static readonly LogTag UI = new LogTag("UI",
+  "#4FC3F7");`) and used anywhere: `$"{Tags.UI} Opened"` writes `[UI] Opened`;
+  `Tagged(params LogTag[])` on channels and `ULog`. `LogTag.All`, `LogTag.Find(name)`.
+- Unity's Console uses the `LogTag` colour for tags in rich text.
+
 ## [1.3.0] - 2026-10-28
 
 ### AI Console 1.0.0 — new

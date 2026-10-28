@@ -5,15 +5,15 @@ Utility Tools has **two kinds of version**. Both follow [Semantic Versioning](ht
 
 | | What it is | Where it lives |
 |---|---|---|
-| **Package version** | The release you install and pin (`…git#v1.3.0`) | `package.json`, git tag `v<version>`, `UtilityToolsInfo.PackageVersion`, `## [x.y.z]` headings in the changelog |
+| **Package version** | The release you install and pin (`…git#v1.4.0`) | `package.json`, git tag `v<version>`, `UtilityToolsInfo.PackageVersion`, `## [x.y.z]` headings in the changelog |
 | **Feature version** | The history of one tool inside the package | `UtilityToolsInfo.Features`, `### Feature x.y.z` headings in the changelog, the About section of the settings page |
 
 ## Current features
 
 | Feature | Version | Covers |
 |---|---|---|
-| AI Console | 1.0.0 | Console window, capture, AI bridge files, settings page |
-| ULog | 1.0.0 | `ULog`, `LogChannel`, `LogRecord`, build-stripping defines |
+| AI Console | 1.1.0 | Console window, capture, AI bridge files, agent setup, commands, settings page |
+| ULog | 1.1.0 | `ULog`, `LogChannel`, `LogTag`, `LogRecord`, build-stripping defines |
 | [Button] | 2.0.0 | `ButtonAttribute` and the inspector that draws it |
 | Scene Switcher | 2.0.0 | `Ctrl+Q` / `Ctrl+W` overlay |
 | Inspector Lock | 1.0.1 | `Ctrl+E` |

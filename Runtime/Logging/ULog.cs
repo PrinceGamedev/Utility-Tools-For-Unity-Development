@@ -116,6 +116,9 @@ namespace UtilityTools.Logging
         /// <summary>Tags for one log on the default channel: <c>ULog.Tagged("UI").Info("Opened")</c>.</summary>
         public static TaggedLog Tagged(params string[] tags) => new TaggedLog(Default, tags);
 
+        /// <summary>Tags defined in code for one log on the default channel: <c>ULog.Tagged(Tags.UI).Info("Opened")</c>.</summary>
+        public static TaggedLog Tagged(params LogTag[] tags) => new TaggedLog(Default, LogTag.Names(tags));
+
         [HideInCallstack, Conditional(Editor), Conditional(DevBuild), Conditional(ForceLogs)]
         public static void Assert(bool condition, string message, Object context = null)
         {
@@ -208,7 +211,7 @@ namespace UtilityTools.Logging
 
             var sb = new StringBuilder(record.Message.Length + 32);
             if (record.Channel != Default) AppendTag(sb, record.Channel.Name, record.Channel.ColorHex);
-            for (int i = 0; i < record.Tags.Count; i++) AppendTag(sb, record.Tags[i], TagColor?.Invoke(record.Tags[i]));
+            for (int i = 0; i < record.Tags.Count; i++) AppendTag(sb, record.Tags[i], TagColor?.Invoke(record.Tags[i]) ?? LogTag.Find(record.Tags[i])?.ColorHex);
             if (sb.Length > 0) sb.Append(' ');
 
             sb.Append(record.Message);

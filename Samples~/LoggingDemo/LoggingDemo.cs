@@ -18,6 +18,18 @@ namespace UtilityTools.Samples
     }
 
     /// <summary>
+    /// Define tags and their colours once; use them anywhere. The AI Console lists them in its tags bar
+    /// (even before they are used) and colours them in every log.
+    /// </summary>
+    public static class DemoTags
+    {
+        public static readonly LogTag UI = new LogTag("UI", "#4FC3F7");
+        public static readonly LogTag Boss = new LogTag("Boss", "#FF7043");
+        public static readonly LogTag Tutorial = new LogTag("Tutorial", "#AED581");
+        public static readonly LogTag Audio = new LogTag("Audio", "#BA68C8");
+    }
+
+    /// <summary>
     /// Add to a GameObject, open Tools → Utility Tools → AI Console, then press the buttons.
     /// Every log also lands in Logs/AIConsole/ for AI agents.
     /// </summary>
@@ -39,11 +51,11 @@ namespace UtilityTools.Samples
         private void TaggedLogs()
         {
             // A log can carry several tags: its system plus any extra ones. Filter them in the AI Console's
-            // Tags bar (pick several, Any / All) and give them colours with "Edit tags".
-            DemoSystems.Spawn.Tagged("UI", "Boss").Info("Boss health bar shown", ("hp", 500));
-            DemoSystems.Network.Tagged("UI").Warning("Lobby list slow", ("ms", 900));
-            ULog.Tagged("Tutorial").Info("Step 3 reached");
-            Debug.Log("[UI][Audio] Button click sound played"); // plain Debug.Log tags work too
+            // tags bar (click several, Any / All). Colours come from DemoTags.
+            DemoSystems.Spawn.Tagged(DemoTags.UI, DemoTags.Boss).Info("Boss health bar shown", ("hp", 500));
+            DemoSystems.Network.Tagged(DemoTags.UI).Warning("Lobby list slow", ("ms", 900));
+            ULog.Tagged(DemoTags.Tutorial).Info("Step 3 reached");
+            Debug.Log($"{DemoTags.UI}{DemoTags.Audio} Button click sound played"); // plain Debug.Log: "[UI][Audio] …"
         }
 
         [Button("Nested Exception")]
@@ -93,7 +105,7 @@ namespace UtilityTools.Samples
         [Button("Plain Debug.Log With [Tag]")]
         private void PlainTagged()
         {
-            // Plain Unity logs are captured too; a leading [Tag] becomes the system.
+            // Plain Unity logs are captured too; leading [Tags] are read from the text (case-insensitive).
             Debug.Log("[Audio] Music started");
             Debug.LogWarning("Plain warning without a tag");
         }

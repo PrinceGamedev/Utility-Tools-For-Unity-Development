@@ -85,6 +85,44 @@ namespace UtilityTools.AIConsole
             }
         }
 
+        /// <summary>
+        /// After a compile: messages from assemblies that were rebuilt are replaced by <paramref name="fresh"/>;
+        /// messages from assemblies that were not rebuilt stay (same ids), like Unity's Console.
+        /// </summary>
+        public static void UpdateCompileIssues(ICollection<string> rebuilt, List<ConsoleEntry> fresh,
+            Func<ConsoleEntry, string> assemblyOf, Func<string, bool> fileExists)
+        {
+            var kept = KeepCompileIssues(s_CompileIssues, rebuilt, assemblyOf, fileExists);
+            s_CompileIssues.Clear();
+            s_CompileIssues.AddRange(kept);
+            foreach (var e in fresh)
+            {
+                e.id = s_NextId++;
+                s_CompileIssues.Add(e);
+                Added?.Invoke(e);
+            }
+        }
+
+        /// <summary>
+        /// The previous compile messages that still apply: their assembly is known, was not rebuilt, and
+        /// their file still exists. Messages of an unknown assembly are dropped (the old behaviour).
+        /// </summary>
+        internal static List<ConsoleEntry> KeepCompileIssues(IEnumerable<ConsoleEntry> previous, ICollection<string> rebuilt,
+            Func<ConsoleEntry, string> assemblyOf, Func<string, bool> fileExists)
+        {
+            var kept = new List<ConsoleEntry>();
+            foreach (var c in previous)
+            {
+                string asm = c.assembly ?? assemblyOf?.Invoke(c);
+                if (string.IsNullOrEmpty(asm) || rebuilt.Contains(asm)) continue;
+                if (c.file != null && fileExists != null && !fileExists(c.file)) continue;
+                c.assembly = asm;
+                kept.Add(c);
+            }
+
+            return kept;
+        }
+
         public static void ClearCompileIssues() => s_CompileIssues.Clear();
 
         /// <summary>Adds one compiler message that arrived outside a CompilationPipeline callback.</summary>

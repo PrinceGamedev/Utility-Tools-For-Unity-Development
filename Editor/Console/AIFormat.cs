@@ -44,6 +44,8 @@ namespace UtilityTools.AIConsole
             sb.Append(" errors=").Append(ConsoleStore.ErrorCount);
             sb.Append(" warnings=").Append(ConsoleStore.WarningCount);
             sb.Append(" last_id=").Append(ConsoleStore.LastId);
+            if (editorRunning && AICommands.TryGetPendingAsk(out _)) sb.Append(" ask=pending");
+            else if (editorRunning && AICommands.Busy) sb.Append(" commands=running");
             sb.Append(" unity=").Append(Application.unityVersion);
             sb.Append(" updated=").Append(IsoNow());
             sb.Append('\n');
@@ -315,7 +317,36 @@ Live data from the Unity Editor. Cheapest first:
    `session.prev.jsonl` holds the previous editor session.
 
 Ids are shared with the AI Console window: the user may say ""look at #812"".
-After editing scripts, wait for status `compile=ok` with a newer compiled_at before judging results.
+`ask=pending` in status: you asked the user something and they have not answered yet.
+
+**Driving the Editor — commands.txt → results.txt**
+Write commands, one per line, to `{folder}/commands.txt`. Unity takes the file (it disappears), runs the
+commands in order and rewrites `{folder}/results.txt`: line 1 `state=running|done batch=N picked_up=…`,
+then `#k <command> -> queued|running|done|failed: <result>`, and when done a final `status:` line.
+Your batch is finished when commands.txt is gone and results.txt starts with `state=done`.
+
+| command | does | result |
+|---|---|---|
+| `refresh` | imports changed assets, compiles changed scripts | `compiled` / `compile failed: N error(s)` / `imported; no script changes` |
+| `compile` | requests a script compile | as refresh |
+| `clear` | clears the console like the Clear button (compile errors stay) | `cleared` |
+| `play` / `stop` | enters / leaves Play Mode | `mode=play` / `mode=edit`, or why not |
+| `pause` / `resume` | pauses Play Mode | |
+| `wait <s>` | waits (≤ 300 s), e.g. between play and stop | |
+| `mark <label>` | adds a marker entry to bracket a test run | `#id` of the marker |
+| `show <id>` | opens the AI Console on that entry for the user | |
+| `ask <text>` | shows a request card with Done / Can't do it; waits for the user | `user=done note=""…"" logs=#a..#b (…)` |
+| `status` | nothing; the batch ends with the status line | |
+| `menu <path>` | runs a menu item — only if allowed in Project Settings | |
+
+Wait for a batch (bash):
+`f={folder}; printf 'refresh\n' > $f/commands.txt; for i in $(seq 120); do [ ! -e $f/commands.txt ] && grep -q '^state=done' $f/results.txt && break; sleep 1; done; cat $f/results.txt`
+
+PowerShell:
+`$f='{folder}'; Set-Content $f/commands.txt 'refresh'; for($i=0;$i -lt 120;$i++){{ if(!(Test-Path $f/commands.txt) -and (Get-Content $f/results.txt -TotalCount 1) -like 'state=done*'){{break}}; Start-Sleep 1 }}; Get-Content $f/results.txt`
+
+Not picked up within ~10 s: Unity is closed (status `state=closed`), busy, or throttled in the background —
+ask the user to click the Unity window. Commands can be turned off in Project Settings › Utility Tools › AI Console.
 ";
     }
 }

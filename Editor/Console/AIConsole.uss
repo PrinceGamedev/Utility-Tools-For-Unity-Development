@@ -568,6 +568,99 @@
     color: var(--aic-text);
 }
 
+/* ---------- AI agent card (requests from the agent, first-run setup) ---------- */
+.aic-agent {
+    flex-shrink: 0;
+    padding: 8px 10px 9px 10px;
+    border-bottom-width: 1px;
+    border-left-width: 3px;
+    border-color: var(--aic-border);
+    border-left-color: var(--aic-accent);
+    background-color: var(--aic-raised);
+}
+
+.aic-agent--ask {
+    border-left-color: var(--aic-warning);
+    background-color: var(--aic-warning-bg);
+}
+
+.aic-agent__head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.aic-agent__badge {
+    font-size: var(--aic-fs-xs);
+    -unity-font-style: bold;
+    color: var(--aic-badge-text);
+    background-color: var(--aic-accent);
+    border-radius: 3px;
+    padding: 0 5px;
+    margin-right: 7px;
+}
+
+.aic-agent--ask .aic-agent__badge {
+    background-color: var(--aic-warning);
+}
+
+.aic-agent__title {
+    font-size: var(--aic-fs);
+    -unity-font-style: bold;
+    color: var(--aic-text);
+}
+
+.aic-agent__text {
+    font-size: var(--aic-fs);
+    white-space: normal;
+    color: var(--aic-text);
+    margin-bottom: 7px;
+}
+
+.aic-agent--ask .aic-agent__text {
+    font-size: var(--aic-fs-lg);
+}
+
+.aic-agent__actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.aic-agent__note {
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 140px;
+    margin: 0 6px 0 0;
+}
+
+.aic-agent__actions > Button {
+    font-size: var(--aic-fs);
+    padding: 3px 12px;
+    margin: 0 6px 0 0;
+}
+
+.aic-agent__actions > Button.aic-agent__primary {
+    background-color: var(--aic-accent);
+    border-color: var(--aic-accent);
+    color: #ffffff;
+    -unity-font-style: bold;
+}
+
+.aic-agent__actions > Button.aic-agent__primary:hover {
+    opacity: 0.88;
+}
+
+.aic-agent__actions > Button.aic-agent__quiet {
+    background-color: rgba(0, 0, 0, 0);
+    border-color: rgba(0, 0, 0, 0);
+    color: var(--aic-dim);
+}
+
+.aic-agent__actions > Button.aic-agent__quiet:hover {
+    color: var(--aic-text);
+}
+
 /* ---------- Systems bar ---------- */
 .aic-systems__chips {
     flex-direction: row;

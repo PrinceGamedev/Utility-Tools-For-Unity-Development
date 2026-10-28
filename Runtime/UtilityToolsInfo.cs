@@ -9,12 +9,12 @@ namespace UtilityTools
     public static class UtilityToolsInfo
     {
         /// <summary>The installable release (package.json, git tag "v" + version).</summary>
-        public const string PackageVersion = "1.3.0";
+        public const string PackageVersion = "1.4.0";
 
         /// <summary>Each feature's own SemVer; bumped only when that feature changes.</summary>
         public static class Features
         {
-            public const string AIConsole = "1.0.0";
+            public const string AIConsole = "1.1.0";
             public const string ULog = "1.0.0";
             public const string Button = "2.0.0";
             public const string SceneSwitcher = "2.0.0";

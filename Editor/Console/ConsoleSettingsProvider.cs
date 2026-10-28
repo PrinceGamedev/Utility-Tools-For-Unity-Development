@@ -17,17 +17,20 @@ namespace UtilityTools.AIConsole
         private const string DefineStripErrors = "UTILITYTOOLS_STRIP_ERRORS";
         private const string DefineSilence = "UTILITYTOOLS_SILENCE_UNITY_LOGS";
 
+        internal const string SettingsPath = "Project/Utility Tools/AI Console";
+
         private static Vector2 s_Scroll;
 
         [SettingsProvider]
         private static SettingsProvider Create() =>
-            new SettingsProvider("Project/Utility Tools/AI Console", SettingsScope.Project)
+            new SettingsProvider(SettingsPath, SettingsScope.Project)
             {
                 label = "AI Console",
                 guiHandler = _ => Draw(),
                 keywords = new HashSet<string>(new[]
                 {
-                    "log", "logging", "ULog", "channel", "system", "console", "AI", "strip", "release", "define"
+                    "log", "logging", "ULog", "channel", "system", "console", "AI", "strip", "release", "define",
+                    "agent", "CLAUDE.md", "AGENTS.md", "Cursor", "Copilot", "commands"
                 })
             };
 
@@ -56,6 +59,7 @@ namespace UtilityTools.AIConsole
             EditorGUI.BeginChangeCheck();
             DrawCapture(project);
             DrawAI(project);
+            DrawAgents(project);
             projectChanged |= EditorGUI.EndChangeCheck();
 
             if (projectChanged) project.SaveAndNotify();
@@ -302,6 +306,95 @@ namespace UtilityTools.AIConsole
                     if (GUILayout.Button("Write now", GUILayout.Width(120))) AIBridge.Flush(true);
                 }
             }
+        }
+
+        // ---------- AI agents ----------
+        private static AgentFileState[] s_AgentStates;
+        private static double s_AgentStatesAt = -10;
+        private static bool s_ShowSection;
+        private static GUIStyle s_OkStyle, s_WarnStyle;
+
+        private static void DrawAgents(ConsoleProjectSettings s)
+        {
+            Header("AI agents",
+                "A short managed section in agent instruction files tells AI agents how to read these files and drive Unity " +
+                "through commands.txt, so you don't have to explain it. Only text between the Utility Tools markers is written. " +
+                "Commit the files to share them with the team.");
+
+            if (s_AgentStates == null || EditorApplication.timeSinceStartup - s_AgentStatesAt > 2) RefreshAgentStates();
+            if (s_OkStyle == null)
+            {
+                s_OkStyle = new GUIStyle(EditorStyles.label) { normal = { textColor = new Color(0.30f, 0.76f, 0.54f) } };
+                s_WarnStyle = new GUIStyle(EditorStyles.label) { normal = { textColor = new Color(0.95f, 0.76f, 0.31f) } };
+            }
+
+            for (int i = 0; i < AgentSetup.Targets.Length; i++)
+            {
+                var t = AgentSetup.Targets[i];
+                var state = s_AgentStates[i];
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    EditorGUILayout.LabelField(new GUIContent(t.Path, "Read by " + t.Agents), GUILayout.Width(250));
+                    switch (state)
+                    {
+                        case AgentFileState.Installed: GUILayout.Label("installed", s_OkStyle, GUILayout.Width(110)); break;
+                        case AgentFileState.Outdated: GUILayout.Label("outdated", s_WarnStyle, GUILayout.Width(110)); break;
+                        case AgentFileState.NotInstalled: GUILayout.Label("not added", EditorStyles.miniLabel, GUILayout.Width(110)); break;
+                        default: GUILayout.Label("no file", EditorStyles.miniLabel, GUILayout.Width(110)); break;
+                    }
+
+                    bool has = state == AgentFileState.Installed || state == AgentFileState.Outdated;
+                    if (state == AgentFileState.Outdated && GUILayout.Button("Update", GUILayout.Width(80))) Act(() => AgentSetup.Install(t));
+                    if (!has && GUILayout.Button(new GUIContent(state == AgentFileState.NoFile ? "Create" : "Add",
+                            "Write the section into " + t.Path), GUILayout.Width(80)))
+                        Act(() => AgentSetup.Install(t));
+                    if (has && GUILayout.Button(new GUIContent("Remove", "Remove only the managed section"), GUILayout.Width(80)))
+                        Act(() => AgentSetup.Uninstall(t));
+                    GUILayout.FlexibleSpace();
+                }
+            }
+
+            EditorGUILayout.Space(4);
+            s.agentAutoUpdate = EditorGUILayout.Toggle(new GUIContent("Keep sections up to date",
+                "After a package update or a folder change, refresh sections that are already there. " +
+                "Files without the section are never touched."), s.agentAutoUpdate);
+            s.aiCommandsEnabled = EditorGUILayout.Toggle(new GUIContent("Accept commands (commands.txt)",
+                "Agents can import and compile, clear, enter and leave Play Mode, add markers, show entries and ask you for help."),
+                s.aiCommandsEnabled);
+            using (new EditorGUI.DisabledScope(!s.aiCommandsEnabled))
+                s.aiAllowMenuCommands = EditorGUILayout.Toggle(new GUIContent("Allow menu commands",
+                    "`menu <path>` runs any Editor menu item. Off by default."), s.aiAllowMenuCommands);
+
+            s_ShowSection = EditorGUILayout.Foldout(s_ShowSection, "Preview section", true);
+            if (s_ShowSection)
+            {
+                string text = AgentBlock.Build(AIBridge.Folder);
+                var style = new GUIStyle(EditorStyles.textArea) { wordWrap = true, fontSize = 11 };
+                float width = EditorGUIUtility.currentViewWidth - 40;
+                EditorGUILayout.SelectableLabel(text, style, GUILayout.Height(style.CalcHeight(new GUIContent(text), width)));
+                if (GUILayout.Button("Copy", GUILayout.Width(80))) EditorGUIUtility.systemCopyBuffer = text;
+            }
+
+            if (ConsoleUserSettings.instance.agentSetupDismissed &&
+                GUILayout.Button("Show the setup card in the AI Console again", GUILayout.Width(300)))
+            {
+                ConsoleUserSettings.instance.agentSetupDismissed = false;
+                ConsoleUserSettings.instance.SaveAndNotify();
+            }
+        }
+
+        private static void Act(Func<bool> action)
+        {
+            action();
+            RefreshAgentStates();
+            GUIUtility.ExitGUI();
+        }
+
+        private static void RefreshAgentStates()
+        {
+            s_AgentStates = new AgentFileState[AgentSetup.Targets.Length];
+            for (int i = 0; i < s_AgentStates.Length; i++) s_AgentStates[i] = AgentSetup.StateOf(AgentSetup.Targets[i]);
+            s_AgentStatesAt = EditorApplication.timeSinceStartup;
         }
 
         private static void Header(string title, string help)

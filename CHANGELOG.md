@@ -6,6 +6,26 @@ All notable changes to this package are documented here. Both the package and ea
 `## [x.y.z]` is the **package** release you install. Inside each release, `### Feature x.y.z` is that
 **feature's** own version; features not listed are unchanged.
 
+## [1.4.0] - 2026-10-28
+
+### AI Console 1.1.0
+- **One-time AI agent setup.** A *Let AI agents use this console* card (and Project Settings ›
+  Utility Tools › AI Console › AI agents) writes a short managed section into `CLAUDE.md`,
+  `AGENTS.md`, `GEMINI.md`, `.github/copilot-instructions.md` or a Cursor rule. Agents then know how
+  to read Unity's state, drive the Editor and ask for help, without being told each session.
+  - One click uses the agent files the project already has, or creates `CLAUDE.md` + `AGENTS.md`.
+  - Only text between the `utilitytools:ai-console` markers is written; line endings and BOM are kept.
+  - Installed sections update themselves after package updates or an AI folder change (can be turned
+    off); files without the section are never touched.
+- **Editor commands for agents** — `commands.txt` → `results.txt` in the AI folder: `refresh`,
+  `compile`, `clear`, `play`, `stop`, `pause`, `resume`, `wait <s>`, `mark <label>`, `show <id>`,
+  `ask <text>`, `status`, `help`, and `menu <path>` (off by default). Runs in order, reports timing
+  and compile results, ends with the status line, and survives compiles and entering Play Mode.
+- **Requests from the agent** — `ask` shows a card in the AI Console with *Done* / *Can't do it* and a
+  note. The answer reports the ids and counts of the logs written meanwhile, and markers bracket the
+  request in the log.
+- `status.txt` shows `ask=pending` / `commands=running`; `AI-README.md` documents the commands.
+
 ## [1.3.0] - 2026-10-28
 
 ### AI Console 1.0.0 — new

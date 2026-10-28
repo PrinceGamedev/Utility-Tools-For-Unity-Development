@@ -41,6 +41,24 @@ namespace UtilityTools.AIConsole
             window.Show();
         }
 
+        /// <summary>Opens the window on an entry (AI command <c>show</c>).</summary>
+        internal static void Reveal(ConsoleEntry e)
+        {
+            var window = GetWindow<AIConsoleWindow>();
+            window.Show();
+            if (window._list == null) EditorApplication.delayCall += () => window.SelectEntry(e);
+            else window.SelectEntry(e);
+        }
+
+        /// <summary>Brings the window forward for an AI request (AI command <c>ask</c>); the card shows it.</summary>
+        internal static void ShowAsk(string text)
+        {
+            var window = GetWindow<AIConsoleWindow>();
+            window.Show();
+            window._dirty = true;
+            window.ShowNotification(new GUIContent("Your AI agent needs you"), 2.5);
+        }
+
         [Shortcut("Utility Tools/AI Console", KeyCode.C, ShortcutModifiers.Action | ShortcutModifiers.Shift | ShortcutModifiers.Alt)]
         private static void OpenViaShortcut() => Open();
 
@@ -60,6 +78,12 @@ namespace UtilityTools.AIConsole
         private ToolbarSearchField _search;
         private ToolbarToggle _logToggle, _warnToggle, _errorToggle;
         private VisualElement _banner;
+        private VisualElement _agentCard;
+        private Label _agentTitle, _agentText;
+        private TextField _agentNote;
+        private Button _agentPrimary, _agentSecondary, _agentTertiary;
+        private bool _agentSetupNeeded;
+        private bool _agentAsking;
         private Label _bannerTitle, _bannerText;
         private VisualElement _systems;
         private VisualElement _timeline;
@@ -125,6 +149,7 @@ namespace UtilityTools.AIConsole
             content.Add(_searchRow);
 
             content.Add(BuildBanner());
+            content.Add(BuildAgentCard());
             content.Add(BuildSystems());
             content.Add(BuildTimeline());
 
@@ -154,6 +179,9 @@ namespace UtilityTools.AIConsole
 
             ConsoleStore.Changed += MarkDirty;
             ConsoleProjectSettings.Changed += MarkDirty;
+            AICommands.Changed += MarkDirty;
+            AgentSetup.Changed += OnAgentFilesChanged;
+            OnAgentFilesChanged();
             root.schedule.Execute(Tick).Every(100);
 
             ApplyTextSize();
@@ -165,6 +193,8 @@ namespace UtilityTools.AIConsole
         {
             ConsoleStore.Changed -= MarkDirty;
             ConsoleProjectSettings.Changed -= MarkDirty;
+            AICommands.Changed -= MarkDirty;
+            AgentSetup.Changed -= OnAgentFilesChanged;
         }
 
         private void MarkDirty() => _dirty = true;
@@ -715,6 +745,140 @@ namespace UtilityTools.AIConsole
             }
 
             _banner.style.display = compiling || compileErrors > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        // ---------- AI agent card: requests from the agent, first-run setup ----------
+        private VisualElement BuildAgentCard()
+        {
+            _agentCard = new VisualElement();
+            _agentCard.AddToClassList("aic-agent");
+
+            var head = new VisualElement();
+            head.AddToClassList("aic-agent__head");
+            var badge = new Label("AI");
+            badge.AddToClassList("aic-agent__badge");
+            _agentTitle = new Label();
+            _agentTitle.AddToClassList("aic-agent__title");
+            head.Add(badge);
+            head.Add(_agentTitle);
+            _agentCard.Add(head);
+
+            _agentText = new Label { enableRichText = false };
+            _agentText.AddToClassList("aic-agent__text");
+            _agentCard.Add(_agentText);
+
+            var actions = new VisualElement();
+            actions.AddToClassList("aic-agent__actions");
+            _agentNote = new TextField { tooltip = "Optional note for the agent, e.g. what you saw. Enter = Done." };
+            _agentNote.AddToClassList("aic-agent__note");
+#if UNITY_2023_1_OR_NEWER
+            _agentNote.textEdition.placeholder = "Note for the agent (optional)";
+            _agentNote.textEdition.hidePlaceholderOnFocus = true;
+#endif
+            _agentNote.RegisterCallback<KeyDownEvent>(e =>
+            {
+                if (e.keyCode != KeyCode.Return && e.keyCode != KeyCode.KeypadEnter) return;
+                AnswerAsk(true);
+                e.StopPropagation();
+            });
+            _agentPrimary = new Button(() => OnAgentAction(0));
+            _agentPrimary.AddToClassList("aic-agent__primary");
+            _agentSecondary = new Button(() => OnAgentAction(1));
+            _agentTertiary = new Button(() => OnAgentAction(2));
+            _agentTertiary.AddToClassList("aic-agent__quiet");
+            actions.Add(_agentNote);
+            actions.Add(_agentPrimary);
+            actions.Add(_agentSecondary);
+            actions.Add(_agentTertiary);
+            _agentCard.Add(actions);
+
+            _agentCard.style.display = DisplayStyle.None;
+            return _agentCard;
+        }
+
+        private void OnAgentFilesChanged()
+        {
+            _agentSetupNeeded = AIBridge.Enabled && !User.agentSetupDismissed && !AgentSetup.AnyInstalled();
+            _dirty = true;
+        }
+
+        private void UpdateAgentCard()
+        {
+            if (_agentCard == null) return;
+
+            if (AICommands.TryGetPendingAsk(out var ask))
+            {
+                if (!_agentAsking) _agentNote.SetValueWithoutNotify("");
+                _agentAsking = true;
+                _agentCard.AddToClassList("aic-agent--ask");
+                _agentTitle.text = "Your AI agent asks";
+                _agentText.text = ask.Text;
+                _agentNote.style.display = DisplayStyle.Flex;
+                _agentPrimary.text = "Done";
+                _agentPrimary.tooltip = "Tell the agent you did it. Logs written since the request are reported with your answer.";
+                _agentSecondary.text = "Can't do it";
+                _agentSecondary.tooltip = "Tell the agent you could not do it (add a note why).";
+                _agentTertiary.style.display = DisplayStyle.None;
+                _agentCard.style.display = DisplayStyle.Flex;
+                return;
+            }
+
+            _agentAsking = false;
+            _agentCard.RemoveFromClassList("aic-agent--ask");
+            if (_agentSetupNeeded)
+            {
+                _agentTitle.text = "Let AI agents use this console";
+                _agentText.text =
+                    "Adds a short section to " + string.Join(" and ", AgentSetup.DefaultTargetPaths()) +
+                    " so AI agents (Claude Code, Codex, Cursor…) read Unity's errors and compile state, and can compile, " +
+                    "enter Play Mode or ask you for help, without being told each time. Only text between Utility Tools markers is changed.";
+                _agentNote.style.display = DisplayStyle.None;
+                _agentPrimary.text = "Set up";
+                _agentPrimary.tooltip = "Write the section now. Project Settings › Utility Tools › AI Console lists every agent file.";
+                _agentSecondary.text = "Settings…";
+                _agentSecondary.tooltip = "Choose agent files in Project Settings.";
+                _agentTertiary.text = "Not now";
+                _agentTertiary.tooltip = "Hide this. Set up later from Project Settings › Utility Tools › AI Console.";
+                _agentTertiary.style.display = DisplayStyle.Flex;
+                _agentCard.style.display = DisplayStyle.Flex;
+                return;
+            }
+
+            _agentCard.style.display = DisplayStyle.None;
+        }
+
+        private void OnAgentAction(int button)
+        {
+            if (_agentAsking)
+            {
+                if (button == 0) AnswerAsk(true);
+                else if (button == 1) AnswerAsk(false);
+                return;
+            }
+
+            switch (button)
+            {
+                case 0:
+                    var written = AgentSetup.InstallDefault();
+                    if (written.Count > 0) ShowNotification(new GUIContent("AI section added to " + string.Join(", ", written)), 3);
+                    break;
+                case 1:
+                    SettingsService.OpenProjectSettings(ConsoleSettingsProvider.SettingsPath);
+                    break;
+                case 2:
+                    User.agentSetupDismissed = true;
+                    SaveUser();
+                    break;
+            }
+
+            OnAgentFilesChanged();
+        }
+
+        private void AnswerAsk(bool done)
+        {
+            AICommands.Answer(done, _agentNote.value);
+            _agentNote.SetValueWithoutNotify("");
+            _dirty = true;
         }
 
         // ---------- Tags bar ----------
@@ -1394,6 +1558,7 @@ namespace UtilityTools.AIConsole
             _errorToggle.text = Count(ConsoleStore.ErrorCount + ConsoleStore.CompileErrorCount);
 
             UpdateBanner();
+            UpdateAgentCard();
             UpdateSystems();
             UpdateTimeline();
             UpdateStatus();

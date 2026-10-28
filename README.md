@@ -88,18 +88,52 @@ Unity's Console with one capture pipeline and two readers:
   - The layout adapts to narrow windows and is remembered per user.
 - History survives script reloads.
 
-### Pointing an AI agent at it
+### Let AI agents use it — one-time setup
 
 The files are plain text, so an agent reads them with normal file tools. There's no MCP server and
-no tool schemas sitting in the agent's context. Add this to your project's `CLAUDE.md` / `AGENTS.md`:
+no tool schemas sitting in the agent's context.
 
-```markdown
-## Unity Editor state
-Read `Logs/AIConsole/status.txt` first (one line). If it shows errors or compile-failed, read
-`Logs/AIConsole/errors.md`. For one entry, search `Logs/AIConsole/session.jsonl` for `"id":<n>`.
-After editing scripts, wait until status shows `compile=ok` with a newer `compiled_at`.
-Schema: `Logs/AIConsole/AI-README.md`.
+**Set up once, then never explain it again.** The AI Console shows a *Let AI agents use this console*
+card; press **Set up**. It writes a short managed section (~350 tokens) into the agent instruction
+files your project already has, or creates `CLAUDE.md` + `AGENTS.md`. Agents read those files at the
+start of every session, so they know how to:
+- read Unity's state (`status.txt` → `errors.md` → `session.jsonl`);
+- drive the Editor through `commands.txt` (compile, play, stop, clear, markers);
+- ask you for help in the AI Console when they need you.
+
+Supported files: `CLAUDE.md` (Claude Code), `AGENTS.md` (Codex, Cursor, Copilot, Jules, Aider…),
+`GEMINI.md`, `.github/copilot-instructions.md`, `.cursor/rules/unity-ai-console.mdc`. Manage them in
+**Project Settings → Utility Tools → AI Console → AI agents**. Only the text between the
+`<!-- utilitytools:ai-console:begin … -->` / `end` markers is ever written; the rest of the file is
+yours. The section updates itself after package updates. Commit the files so the whole team gets it.
+
+### Driving the Editor — `commands.txt`
+
+An agent writes commands, one per line, to `Logs/AIConsole/commands.txt`. Unity takes the file, runs
+them in order and writes `results.txt`:
+
 ```
+refresh          import + compile after editing scripts
+play / stop      enter / leave Play Mode          wait 5     wait between steps
+clear            clear the console                mark run 2 add a marker to bracket a test
+show 812         open the console on entry #812   status     end with the status line
+ask Start level 3 and drop a block on the edge — then press Done
+```
+
+```
+state=done batch=4 picked_up=2026-10-28T12:01:30.511Z
+#1 refresh -> done: compiled (3.2s)
+#2 play -> done: mode=play (1.4s)
+#3 wait 5 -> done: waited 5s
+#4 stop -> done: mode=edit (0.6s)
+status: state=errors mode=edit compile=ok … errors=2 warnings=0 last_id=231 …
+```
+
+`ask` shows a card at the top of the AI Console with **Done** / **Can't do it** and an optional note.
+The answer goes back to the agent with the ids of the logs written while you did it, so it reads
+exactly the reproduction and nothing else. Commands work while Unity is in the background, though
+the OS may throttle it; if a command isn't picked up, the agent asks you to click the Unity window.
+`menu <path>` (run any menu item) is off unless you allow it in Project Settings.
 
 Example `status.txt`:
 ```
@@ -110,6 +144,7 @@ Settings: **Project Settings → Utility Tools → AI Console**. This page holds
 - systems and their colours;
 - release-build switches;
 - the AI files' folder, digest size and rotation;
+- AI agent files and commands;
 - the history size.
 
 ---
@@ -277,14 +312,14 @@ To pin a specific version, append a release tag (see the repo's
 [Tags](https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development/tags)) or a commit hash:
 
 ```
-https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.3.0
+https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.4.0
 ```
 
 ### Versions
 
 There are two kinds of version:
-- **The package version** (e.g. `1.3.0`) is what you install and pin.
-- **Each feature has its own version** (AI Console 1.0.0, ULog 1.0.0, `[Button]` 2.0.0, …). It changes
+- **The package version** (e.g. `1.4.0`) is what you install and pin.
+- **Each feature has its own version** (AI Console 1.1.0, ULog 1.0.0, `[Button]` 2.0.0, …). It changes
   only when that feature changes. In `CHANGELOG.md`, each release lists its changes under the features
   they affect, so you can see whether a release touches the tools you use.
 

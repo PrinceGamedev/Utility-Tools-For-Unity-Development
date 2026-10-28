@@ -54,6 +54,11 @@ namespace UtilityTools.AIConsole
         public int aiTopGroups = 10;
         public int aiUserFrames = 3;
 
+        // AI agents: commands.txt and the managed section in CLAUDE.md / AGENTS.md
+        public bool aiCommandsEnabled = true;
+        public bool aiAllowMenuCommands;
+        public bool agentAutoUpdate = true;
+
         public static event Action Changed;
 
         public void SaveAndNotify()
@@ -130,6 +135,9 @@ namespace UtilityTools.AIConsole
         public List<string> tagFilter = new List<string>();
         public bool tagMatchAll;
         public bool tagEditorOpen;
+
+        /// <summary>"Not now" on the AI agent setup card.</summary>
+        public bool agentSetupDismissed;
         public string search = "";
         public bool showLog = true, showWarning = true, showError = true;
         public string sortMode = "time";

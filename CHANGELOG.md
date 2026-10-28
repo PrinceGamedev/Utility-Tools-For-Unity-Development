@@ -15,6 +15,16 @@ This project adheres to [Semantic Versioning](https://semver.org/).
     `UTILITYTOOLS_SILENCE_UNITY_LOGS` filters plain `Debug.Log` / `LogWarning` in release builds.
   - Extension points: `ULog.Logged` event (custom outputs) and `ULog.Formatter` (line format).
   - Logging methods are hidden from stack traces (Unity 2022.2+), so double-click opens the caller.
+- **AI bridge** — token-lean files an AI agent reads directly (no MCP server, no tool schemas in context),
+  in `Logs/AIConsole/` (configurable):
+  - `status.txt` — one line: state, mode, compile result, error/warning counts, last id (~30 tokens).
+  - `errors.md` — compile errors plus error/warning groups (repeats collapsed, project frames only).
+  - `session.jsonl` — one JSON object per entry for drill-down by `#id`; previous editor session kept
+    as `session.prev.jsonl`; size-capped with rotation.
+  - `AI-README.md` — how to read the files, cheapest first.
+  - Captures logs from every thread, compiler errors/warnings, and Play / compile / clear markers.
+  - Plain `Debug.Log("[Tag] …")` messages are tagged like ULog channels.
+  - Writes are batched, atomic (no half-written files) and only happen when something changed.
 
 ## [1.2.0] - 2026-10-28
 

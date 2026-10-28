@@ -226,6 +226,14 @@ namespace UtilityTools.AIConsole
             return string.IsNullOrEmpty(assetPath) ? o.name : assetPath;
         }
 
+        /// <summary>Clears the session view and leaves a marker so AI readers know history was reset.</summary>
+        internal static void ClearAll(string reason)
+        {
+            Drain();
+            ConsoleStore.Clear();
+            AddMarker("⌫ Console cleared (" + reason + ")");
+        }
+
         // ---------- Markers ----------
         internal static void AddMarker(string message)
         {
@@ -247,11 +255,7 @@ namespace UtilityTools.AIConsole
             switch (change)
             {
                 case PlayModeStateChange.ExitingEditMode:
-                    if (ConsoleUserSettings.instance.clearOnPlay)
-                    {
-                        Drain();
-                        ConsoleStore.Clear();
-                    }
+                    if (ConsoleUserSettings.instance.clearOnPlay) ClearAll("entering Play Mode");
                     break;
                 case PlayModeStateChange.EnteredPlayMode:
                     UpdateMainThreadState();

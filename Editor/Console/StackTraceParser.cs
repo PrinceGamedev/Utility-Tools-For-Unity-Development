@@ -42,6 +42,8 @@ namespace UtilityTools.AIConsole
             "UtilityTools.Logging.", "UtilityTools.AIConsole."
         };
 
+        private static readonly char[] LineBreak = { '\n' };
+
         private static string s_ProjectRoot;
 
         private static string ProjectRoot =>
@@ -52,7 +54,7 @@ namespace UtilityTools.AIConsole
             var frames = new List<StackFrameInfo>();
             if (string.IsNullOrEmpty(stackTrace)) return frames;
 
-            foreach (var raw in stackTrace.Split('\n'))
+            foreach (var raw in stackTrace.Split(LineBreak))
             {
                 string line = raw.TrimEnd('\r');
                 if (line.Trim().Length == 0) continue;

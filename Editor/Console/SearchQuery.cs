@@ -11,7 +11,7 @@ namespace UtilityTools.AIConsole
     /// <item><c>word</c> / <c>"exact phrase"</c> — in message, system, fields or context</item>
     /// <item><c>-word</c> — exclude</item>
     /// <item><c>type:error</c> (log|warning|error|exception|assert|compile|marker; repeat to OR)</item>
-    /// <item><c>sys:Network</c> / <c>-sys:Network</c> (repeat to OR)</item>
+    /// <item><c>tag:UI</c> / <c>sys:Network</c> / <c>-tag:Audio</c> — system or any tag (repeat to OR)</item>
     /// <item><c>#812</c> or <c>id:812</c>, <c>fp:41a536b8e9a5</c>, <c>file:Spawner.cs</c></item>
     /// <item><c>/regex/</c> — on the message</item>
     /// </list>
@@ -76,6 +76,7 @@ namespace UtilityTools.AIConsole
                         return;
                     case "sys":
                     case "system":
+                    case "tag":
                         (negate ? _excludedSystems : _systems).Add(value);
                         return;
                     case "id":
@@ -117,8 +118,9 @@ namespace UtilityTools.AIConsole
             if (_fingerprint != null && !string.Equals(e.fingerprint, _fingerprint, StringComparison.OrdinalIgnoreCase)) return false;
             if (_kinds.Count > 0 && !_kinds.Contains(e.kind)) return false;
             if (_kinds.Count == 0 && e.kind == EntryKind.Marker) return false; // markers only on request
-            if (_systems.Count > 0 && (e.system == null || !_systems.Contains(e.system))) return false;
-            if (e.system != null && _excludedSystems.Contains(e.system)) return false;
+            // sys: / tag: match the system or any extra tag (repeat to OR; -tag: excludes).
+            if (_systems.Count > 0 && !AnyTagIn(e, _systems)) return false;
+            if (_excludedSystems.Count > 0 && AnyTagIn(e, _excludedSystems)) return false;
 
             for (int i = 0; i < _files.Count; i++)
                 if (!MentionsFile(e, _files[i])) return false;
@@ -135,9 +137,18 @@ namespace UtilityTools.AIConsole
             return true;
         }
 
+        private static bool AnyTagIn(ConsoleEntry e, HashSet<string> set)
+        {
+            foreach (var t in e.AllTags)
+                if (set.Contains(t)) return true;
+            return false;
+        }
+
         private static bool Contains(ConsoleEntry e, string term)
         {
             if (Has(e.message, term) || Has(e.system, term) || Has(e.context, term)) return true;
+            for (int i = 0; i < e.TagCount; i++)
+                if (Has(e.tags[i], term)) return true;
             for (int i = 0; i < e.FieldCount; i++)
                 if (Has(e.fieldKeys[i], term) || Has(e.fieldValues[i], term)) return true;
             return false;

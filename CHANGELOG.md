@@ -27,10 +27,15 @@ All notable changes to this package are documented here. Both the package and ea
   - Panels: the details pane docks **bottom or right** (Auto picks right on wide windows) with a drag
     divider (double-click to hide); Systems, Timeline and Details collapse with ▾/▸ arrows; all of it
     is remembered per user.
-  - Slim icon strip with one-click buttons for every option (no dropdown menus): Follow, Error Pause,
-    Clear on Play, Sort and Dock (cycle; Shift+click = back), Details / Systems / Timeline panels,
-    engine frames, row density, copy issues, AI folder, Settings, About. Tooltips name each option
-    and its state; options that are on show an accent marker; the chevron hides the strip.
+  - Side strip with one-click buttons for every option (no dropdown menus): Follow, Error Pause,
+    Clear on Play, Sort and Dock (cycle; Shift+click = back), Details / Tags / Timeline panels, text
+    size, row density, engine frames, copy issues, AI folder, Settings, About. Shows icons + names or
+    icons only (chevron), or hides to a thin edge; options that are on show an accent marker.
+  - Tags: a log can carry several tags (its system, every leading `[Tag]`, `Tagged(...)`). The tag bar
+    filters by one or more tags with **Any / All** matching; *Edit tags* adds tags and sets their
+    colours inline (team setting). Rows show up to three tag chips plus `+n`; `tag:` in search.
+  - Text size: six steps (11–18 px) via A− / A+ or `Ctrl/Cmd` + `=` / `-` / `0`; scales rows, row
+    height, details, chips and the side strip. Remembered per user.
   - Responsive: on narrow windows row fields hide; on very narrow windows search moves to its own
     row and `#id` hides.
   - Compile errors/warnings show a `File.cs:line` chip instead of the full path; Unity's re-printed
@@ -63,6 +68,9 @@ All notable changes to this package are documented here. Both the package and ea
 - Verbose / Info / Warning / Assert calls are compiled out of release builds (arguments included).
   `UTILITYTOOLS_LOGS` keeps them; `UTILITYTOOLS_STRIP_ERRORS` also drops errors;
   `UTILITYTOOLS_SILENCE_UNITY_LOGS` filters plain `Debug.Log` / `LogWarning` in release builds.
+- `Tagged(params string[])` on channels and `ULog`: extra tags for one call
+  (`Spawn.Tagged("UI", "Boss").Info(...)` → `[Spawn][UI][Boss]`); stripped from release builds like the
+  other debug calls, including the `Tagged(...)` call itself. `LogRecord.Tags` exposes them to outputs.
 - Extension points: `ULog.Logged` event (custom outputs) and `ULog.Formatter` (line format).
 - Logging methods are hidden from stack traces (Unity 2022.2+), so double-click opens the caller.
 

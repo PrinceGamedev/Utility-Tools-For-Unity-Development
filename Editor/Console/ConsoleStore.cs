@@ -260,6 +260,7 @@ namespace UtilityTools.AIConsole
             if (e.stackTrace == "") e.stackTrace = null;
             if (e.fieldKeys != null && e.fieldKeys.Length == 0) e.fieldKeys = null;
             if (e.fieldValues != null && e.fieldValues.Length == 0) e.fieldValues = null;
+            if (e.tags != null && e.tags.Length == 0) e.tags = null;
         }
 
         public static void DeleteSnapshot()

@@ -67,6 +67,24 @@ namespace UtilityTools.Tests
             Assert.AreEqual(rest, r);
         }
 
+        [TestCase("[UI][Network] Opened", new[] { "UI", "Network" }, "Opened")]
+        [TestCase("[UI] [Boss] [Wave 2] Spawned", new[] { "UI", "Boss", "Wave 2" }, "Spawned")]
+        [TestCase("[UI] text [NotATag]", new[] { "UI" }, "text [NotATag]")]
+        public void TrySplitTags_ReadsEveryLeadingTag(string message, string[] tags, string rest)
+        {
+            Assert.IsTrue(StackTraceParser.TrySplitTags(message, out var found, out var remaining));
+            CollectionAssert.AreEqual(tags, found);
+            Assert.AreEqual(rest, remaining);
+        }
+
+        [Test]
+        public void TrySplitTags_NoTags()
+        {
+            Assert.IsFalse(StackTraceParser.TrySplitTags("[12:00] time", out var tags, out var rest));
+            Assert.IsNull(tags);
+            Assert.AreEqual("[12:00] time", rest);
+        }
+
         [Test]
         public void StripRichText_RemovesTagsButKeepsText()
         {
@@ -278,6 +296,29 @@ namespace UtilityTools.Tests
         }
 
         [Test]
+        public void TagFilter_MatchesSystemOrAnyExtraTag()
+        {
+            var e = Entry(EntryKind.Log, "Opened", "Spawn");
+            e.tags = new[] { "UI", "Boss" };
+            Assert.IsTrue(new SearchQuery("tag:ui").Matches(e));
+            Assert.IsTrue(new SearchQuery("tag:Spawn").Matches(e), "the system counts as a tag");
+            Assert.IsTrue(new SearchQuery("tag:Audio tag:Boss").Matches(e), "repeated tag: terms are OR-ed");
+            Assert.IsFalse(new SearchQuery("-tag:Boss").Matches(e));
+            Assert.IsTrue(new SearchQuery("boss").Matches(e), "plain words also search tags");
+            Assert.IsTrue(e.HasTag("ui"));
+            Assert.AreEqual("[Spawn][UI][Boss]", e.TagsText);
+        }
+
+        [Test]
+        public void JsonLine_IncludesTags()
+        {
+            var e = Entry(EntryKind.Log, "Opened", "Spawn");
+            e.tags = new[] { "UI", "Boss" };
+            e.ticks = DateTime.UtcNow.Ticks;
+            StringAssert.Contains("\"sys\":\"Spawn\",\"tags\":[\"UI\",\"Boss\"]", AIFormat.JsonLine(e));
+        }
+
+        [Test]
         public void NonEmptyQuery_HidesMarkersUnlessRequested()
         {
             var marker = Entry(EntryKind.Marker, "▶ Entered Play Mode");
@@ -365,6 +406,26 @@ namespace UtilityTools.Tests
 
                 var plain = new LogRecord(ULog.Default, LogLevel.Info, "Hello", null, null, null, false, -1, 1);
                 Assert.AreEqual("Hello", ULog.FormatLine(plain), "the default channel has no tag");
+            }
+            finally
+            {
+                ULog.RichTextTags = rich;
+            }
+        }
+
+        [Test]
+        public void FormatLine_WritesExtraTagsAfterTheChannel()
+        {
+            bool rich = ULog.RichTextTags;
+            ULog.RichTextTags = false;
+            try
+            {
+                var rec = new LogRecord(new LogChannel("Spawn"), LogLevel.Info, "Opened", null, null, null, false, -1, 1,
+                    new[] { "UI", "Boss" });
+                Assert.AreEqual("[Spawn][UI][Boss] Opened", ULog.FormatLine(rec));
+
+                var untagged = new LogRecord(ULog.Default, LogLevel.Info, "Hi", null, null, null, false, -1, 1, new[] { "UI" });
+                Assert.AreEqual("[UI] Hi", ULog.FormatLine(untagged), "the default channel shows only its tags");
             }
             finally
             {

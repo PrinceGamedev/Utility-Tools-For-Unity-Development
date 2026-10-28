@@ -25,8 +25,9 @@ namespace UtilityTools.AIConsole
         public int frame = -1;      // -1 = background thread / not in a frame
         public int thread;
         public EntryKind kind;
-        public string system;       // channel / [Tag]; null = untagged
+        public string system;       // ULog channel; null for plain Debug.Log / the default channel
         public string color;        // "#rrggbb" for the system
+        public string[] tags;       // extra tags: [UI][Boss] prefixes and Tagged(...); null = none
         public string message;      // clean text (no rich-text tags)
         public string stackTrace;   // raw, as Unity reported it
         public string fingerprint;  // groups repeats of the "same" log
@@ -52,6 +53,39 @@ namespace UtilityTools.AIConsole
         public bool IsCompile => kind == EntryKind.CompileError || kind == EntryKind.CompileWarning;
 
         public int FieldCount => fieldKeys?.Length ?? 0;
+
+        public int TagCount => tags?.Length ?? 0;
+
+        /// <summary>System first, then extra tags — everything the tag bar can filter on.</summary>
+        public IEnumerable<string> AllTags
+        {
+            get
+            {
+                if (system != null) yield return system;
+                if (tags == null) yield break;
+                foreach (var t in tags) yield return t;
+            }
+        }
+
+        public bool HasTag(string tag)
+        {
+            if (string.Equals(system, tag, StringComparison.OrdinalIgnoreCase)) return true;
+            if (tags == null) return false;
+            foreach (var t in tags)
+                if (string.Equals(t, tag, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        /// <summary>"[Spawn][UI][Boss]" or "" — compact form used in AI text.</summary>
+        public string TagsText
+        {
+            get
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var t in AllTags) sb.Append('[').Append(t).Append(']');
+                return sb.ToString();
+            }
+        }
 
         public string FirstLine
         {

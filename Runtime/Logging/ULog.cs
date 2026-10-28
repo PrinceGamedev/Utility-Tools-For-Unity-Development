@@ -113,6 +113,9 @@ namespace UtilityTools.Logging
         public static void Exception(Exception exception, Object context = null)
             => Emit(Default, LogLevel.Error, exception?.Message, context, null, exception);
 
+        /// <summary>Tags for one log on the default channel: <c>ULog.Tagged("UI").Info("Opened")</c>.</summary>
+        public static TaggedLog Tagged(params string[] tags) => new TaggedLog(Default, tags);
+
         [HideInCallstack, Conditional(Editor), Conditional(DevBuild), Conditional(ForceLogs)]
         public static void Assert(bool condition, string message, Object context = null)
         {
@@ -134,7 +137,7 @@ namespace UtilityTools.Logging
         // ---------- Core ----------
         [HideInCallstack]
         internal static void Emit(LogChannel channel, LogLevel level, string message, Object context,
-            (string key, object value)[] fields, Exception exception = null, bool isAssert = false)
+            (string key, object value)[] fields, Exception exception = null, bool isAssert = false, string[] tags = null)
         {
 #if !UNITY_EDITOR && !DEVELOPMENT_BUILD && UTILITYTOOLS_STRIP_ERRORS
             if (level >= LogLevel.Error) return;
@@ -144,7 +147,7 @@ namespace UtilityTools.Logging
             int threadId = Thread.CurrentThread.ManagedThreadId;
             bool mainThread = threadId == MainThreadId;
             var record = new LogRecord(channel, level, message, context, fields, exception, isAssert,
-                mainThread ? Time.frameCount : -1, threadId);
+                mainThread ? Time.frameCount : -1, threadId, tags);
 
             RaiseLogged(record);
 
@@ -204,20 +207,26 @@ namespace UtilityTools.Logging
             }
 
             var sb = new StringBuilder(record.Message.Length + 32);
-            if (record.Channel != Default)
-            {
-                if (RichTextTags)
-                    sb.Append("<color=").Append(record.Channel.ColorHex).Append("><b>[")
-                        .Append(record.Channel.Name).Append("]</b></color> ");
-                else
-                    sb.Append('[').Append(record.Channel.Name).Append("] ");
-            }
+            if (record.Channel != Default) AppendTag(sb, record.Channel.Name, record.Channel.ColorHex);
+            for (int i = 0; i < record.Tags.Count; i++) AppendTag(sb, record.Tags[i], TagColor?.Invoke(record.Tags[i]));
+            if (sb.Length > 0) sb.Append(' ');
 
             sb.Append(record.Message);
 
             string fields = record.FormatFields();
             if (fields.Length > 0) sb.Append("  (").Append(fields).Append(')');
             return sb.ToString();
+        }
+
+        /// <summary>Editor-only: colour for a tag in Unity's Console (set by the AI Console settings).</summary>
+        internal static Func<string, string> TagColor { get; set; }
+
+        private static void AppendTag(StringBuilder sb, string tag, string colorHex)
+        {
+            if (RichTextTags && !string.IsNullOrEmpty(colorHex))
+                sb.Append("<color=").Append(colorHex).Append("><b>[").Append(tag).Append("]</b></color>");
+            else
+                sb.Append('[').Append(tag).Append(']');
         }
     }
 }

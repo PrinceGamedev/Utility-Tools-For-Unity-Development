@@ -88,7 +88,8 @@ namespace UtilityTools.AIConsole
 
         private static ConsoleUserSettings User => ConsoleUserSettings.instance;
 
-        private float RowHeight => User.density == RowDensity.Comfortable ? 30f : 22f;
+        private float RowHeight =>
+            RowHeights[Mathf.Clamp(User.textSize, 0, RowHeights.Length - 1)] + (User.density == RowDensity.Comfortable ? 8f : 0f);
 
         // ---------- Lifecycle ----------
         private void CreateGUI()
@@ -102,6 +103,8 @@ namespace UtilityTools.AIConsole
             if (sheet != null) root.styleSheets.Add(sheet);
 
             _query = new SearchQuery(User.search);
+            _systemFilter.Clear();
+            foreach (var t in User.tagFilter) _systemFilter.Add(t);
             titleContent = new GUIContent("AI Console", s_WindowIcon);
 
             root.Add(BuildToolbar());
@@ -153,6 +156,7 @@ namespace UtilityTools.AIConsole
             ConsoleProjectSettings.Changed += MarkDirty;
             root.schedule.Execute(Tick).Every(100);
 
+            ApplyTextSize();
             ShowDetails(null);
             Rebuild();
         }
@@ -322,14 +326,14 @@ namespace UtilityTools.AIConsole
 
         private static readonly string[] SortModes = { "time", "newest", "severity", "count", "system", "message" };
 
-        /// <summary>A side-bar button whose icon, tooltip and lit state are recomputed on every refresh.</summary>
+        /// <summary>A side-strip button whose icon, label, tooltip and lit state are recomputed on every refresh.</summary>
         private sealed class RailItem
         {
             public VisualElement Root;
             public Image Icon;
-            public Label Fallback, Badge;
+            public Label Fallback, Name, Badge;
             public Func<bool> IsOn;
-            public Func<string> IconName, Tip, BadgeText;
+            public Func<string> IconName, Label, Tip, BadgeText;
         }
 
         private readonly List<RailItem> _railItemsList = new List<RailItem>();
@@ -341,17 +345,14 @@ namespace UtilityTools.AIConsole
             _rail = new VisualElement();
             _rail.AddToClassList("aic-rail");
 
+            // Header chevron: icons + names <-> icons only. When hidden, the whole thin strip restores it.
             _railToggle = new Label();
             _railToggle.AddToClassList("aic-rail__toggle");
             _railToggleIcon = new Image();
             _railToggleIcon.AddToClassList("aic-rail__toggle-icon");
             _railToggle.Add(_railToggleIcon);
             _railToggle.AddManipulator(new Clickable(() =>
-            {
-                User.railOpen = !User.railOpen;
-                SaveUser();
-                UpdateRail();
-            }));
+                SetRailMode(User.railMode == RailMode.Expanded ? RailMode.Compact : RailMode.Expanded)));
             _rail.Add(_railToggle);
 
             _railGroups = new VisualElement();
@@ -359,11 +360,11 @@ namespace UtilityTools.AIConsole
             _rail.Add(_railGroups);
 
             // View
-            RailToggle("Profiler.LastFrame|Animation.LastKey|scrolldown|forward", "Fo", () => "Follow — keep the newest log in view", () => User.follow,
-                () => SetFollow(!User.follow));
-            RailToggle("PauseButton", "EP", () => "Error Pause — pause Play Mode on the first error", () => User.pauseOnError,
-                () => SetErrorPause(!User.pauseOnError));
-            RailToggle("TreeEditor.Trash", "CP", () => "Clear on Play — clear the console when entering Play Mode",
+            RailToggle("Profiler.LastFrame|Animation.LastKey|scrolldown|forward", "Follow",
+                () => "Follow — keep the newest log in view", () => User.follow, () => SetFollow(!User.follow));
+            RailToggle("PauseButton", "Error Pause", () => "Error Pause — pause Play Mode on the first error",
+                () => User.pauseOnError, () => SetErrorPause(!User.pauseOnError));
+            RailToggle("TreeEditor.Trash", "Clear on Play", () => "Clear on Play — clear the console when entering Play Mode",
                 () => User.clearOnPlay, () =>
                 {
                     User.clearOnPlay = !User.clearOnPlay;
@@ -372,30 +373,32 @@ namespace UtilityTools.AIConsole
             RailSeparator();
 
             // Order (cycles; Shift+click goes back)
-            RailCycle(() => "AlphabeticalSorting", "So",
+            RailCycle(() => "AlphabeticalSorting", () => "Sort: " + SortLabel(User.sortMode),
                 () => $"Sort: {SortLabel(User.sortMode)}\nClick for next · Shift+click for previous",
                 () => SortLabel(User.sortMode).Substring(0, 1),
                 back => SetSort(Cycle(SortModes, User.sortMode, back)));
             RailSeparator();
 
             // Panels
-            RailToggle("Profiler.UIDetails|align_horizontally_right|UnityEditor.InspectorWindow", "De", () => "Details pane", () => User.detailsOpen,
-                () => SetDetailsOpen(!User.detailsOpen));
-            RailToggle("FilterByType", "Sy", () => "Systems bar", () => User.systemsOpen, () =>
-            {
-                User.systemsOpen = !User.systemsOpen;
-                SaveUser();
-                _systemsSignature = "";
-                MarkDirty();
-            });
-            RailToggle("UnityEditor.ProfilerWindow", "Tl", () => "Timeline", () => User.showTimeline, () =>
+            RailToggle("Profiler.UIDetails|align_horizontally_right|UnityEditor.InspectorWindow", "Details",
+                () => "Details pane", () => User.detailsOpen, () => SetDetailsOpen(!User.detailsOpen));
+            RailToggle("FilterByType", "Tags", () => "Tags bar — filter by one or more tags, edit tag colours",
+                () => User.systemsOpen, () =>
+                {
+                    User.systemsOpen = !User.systemsOpen;
+                    SaveUser();
+                    _systemsSignature = "";
+                    MarkDirty();
+                });
+            RailToggle("UnityEditor.ProfilerWindow", "Timeline", () => "Timeline", () => User.showTimeline, () =>
             {
                 User.showTimeline = !User.showTimeline;
                 SaveUser();
                 MarkDirty();
             });
             RailCycle(() => User.detailsDock == DetailsDock.Bottom ? "align_vertically_bottom"
-                    : User.detailsDock == DetailsDock.Right ? "align_horizontally_right" : "GridLayoutGroup Icon", "Dk",
+                    : User.detailsDock == DetailsDock.Right ? "align_horizontally_right" : "GridLayoutGroup Icon",
+                () => "Dock: " + User.detailsDock,
                 () => $"Dock details: {User.detailsDock}" +
                       (User.detailsDock == DetailsDock.Auto ? " (right on wide windows, bottom otherwise)" : "") +
                       "\nClick for next · Shift+click for previous",
@@ -409,33 +412,57 @@ namespace UtilityTools.AIConsole
             RailSeparator();
 
             // Display
-            RailToggle("UnityEditor.DebugInspectorWindow", "EF", () => "Engine frames — show Unity / System frames in stack traces",
-                () => User.showEngineFrames, () =>
+            RailAction("Toolbar Minus|ol_minus", () => "Smaller Text",
+                () => "Smaller text (Ctrl/Cmd + minus)", () => SetTextSize(User.textSize - 1));
+            RailAction("Toolbar Plus|ol_plus", () => "Larger Text  " + TextSizePx + "px",
+                () => $"Larger text (Ctrl/Cmd + =) · now {TextSizePx}px · Ctrl/Cmd + 0 resets",
+                () => SetTextSize(User.textSize + 1));
+            RailToggle("VerticalLayoutGroup Icon", "Roomy Rows", () => "Roomy rows", () => User.density == RowDensity.Comfortable,
+                () => SetDensity(User.density == RowDensity.Compact ? RowDensity.Comfortable : RowDensity.Compact));
+            RailToggle("UnityEditor.DebugInspectorWindow", "Engine Frames",
+                () => "Engine frames — show Unity / System frames in stack traces", () => User.showEngineFrames, () =>
                 {
                     User.showEngineFrames = !User.showEngineFrames;
                     SaveUser();
                     RefreshDetails(true);
                 });
-            RailToggle("VerticalLayoutGroup Icon", "RR", () => "Roomy rows", () => User.density == RowDensity.Comfortable,
-                () => SetDensity(User.density == RowDensity.Compact ? RowDensity.Comfortable : RowDensity.Compact));
             RailSeparator();
 
             // AI
-            RailAction("SaveAs|TextAsset Icon|UnityEditor.ConsoleWindow", "CI", "Copy issues for AI — the errors.md digest, ready to paste",
+            RailAction("SaveAs|TextAsset Icon|UnityEditor.ConsoleWindow", () => "Copy Issues",
+                () => "Copy issues for AI — the errors.md digest, ready to paste",
                 () => EditorGUIUtility.systemCopyBuffer = IssuesDigest());
-            RailAction("FolderOpened Icon", "AI", "Open the AI files folder (Logs/AIConsole)", AIBridge.Reveal);
+            RailAction("FolderOpened Icon", () => "AI Folder", () => "Open the AI files folder (Logs/AIConsole)", AIBridge.Reveal);
 
             // Bottom-pinned
             var spacer = new VisualElement();
             spacer.AddToClassList("aic-rail__spacer");
             _railGroups.Add(spacer);
-            RailAction("Settings", "St", "Settings — Project Settings → Utility Tools → AI Console",
+            RailAction("Settings", () => "Settings", () => "Settings — Project Settings → Utility Tools → AI Console",
                 () => SettingsService.OpenProjectSettings(SettingsPath));
-            RailAction("_Help", "?", $"About — Utility Tools {UtilityToolsInfo.PackageVersion}, feature versions",
+            RailAction("_Help", () => "About " + UtilityToolsInfo.PackageVersion,
+                () => $"About — Utility Tools {UtilityToolsInfo.PackageVersion}, feature versions",
                 () => SettingsService.OpenProjectSettings("Project/Utility Tools"));
+            RailAction("tab_prev|scrollleft", () => "Hide Strip", () => "Hide the side strip (click the thin edge to bring it back)",
+                () => SetRailMode(RailMode.Hidden));
+
+            // Hidden mode: the strip is a thin edge; clicking anywhere on it brings it back.
+            _rail.RegisterCallback<ClickEvent>(e =>
+            {
+                if (User.railMode != RailMode.Hidden) return;
+                SetRailMode(RailMode.Expanded);
+                e.StopPropagation();
+            });
 
             UpdateRail();
             return _rail;
+        }
+
+        private void SetRailMode(RailMode mode)
+        {
+            User.railMode = mode;
+            SaveUser();
+            UpdateRail();
         }
 
         private static string Cycle(string[] values, string current, bool back)
@@ -452,19 +479,22 @@ namespace UtilityTools.AIConsole
             _railGroups.Add(s);
         }
 
-        private void RailToggle(string icon, string fallback, Func<string> tip, Func<bool> isOn, Action onClick) =>
-            AddRailItem(() => icon, fallback, tip, isOn, null, _ => onClick());
+        private void RailToggle(string icon, string label, Func<string> tip, Func<bool> isOn, Action onClick) =>
+            AddRailItem(() => icon, () => label, tip, isOn, null, _ => onClick());
 
-        private void RailCycle(Func<string> icon, string fallback, Func<string> tip, Func<string> badge, Action<bool> onClick) =>
-            AddRailItem(icon, fallback, tip, null, badge, onClick);
+        private void RailCycle(Func<string> icon, Func<string> label, Func<string> tip, Func<string> badge, Action<bool> onClick) =>
+            AddRailItem(icon, label, tip, null, badge, onClick);
 
-        private void RailAction(string icon, string fallback, string tip, Action onClick) =>
-            AddRailItem(() => icon, fallback, () => tip, null, null, _ => onClick());
+        private void RailAction(string icon, Func<string> label, Func<string> tip, Action onClick) =>
+            AddRailItem(() => icon, label, tip, null, null, _ => onClick());
 
-        private void AddRailItem(Func<string> icon, string fallback, Func<string> tip, Func<bool> isOn,
+        private void AddRailItem(Func<string> icon, Func<string> label, Func<string> tip, Func<bool> isOn,
             Func<string> badge, Action<bool> onClick)
         {
-            var item = new RailItem { Root = new VisualElement(), IconName = icon, Tip = tip, IsOn = isOn, BadgeText = badge };
+            var item = new RailItem
+            {
+                Root = new VisualElement(), IconName = icon, Label = label, Tip = tip, IsOn = isOn, BadgeText = badge
+            };
             item.Root.AddToClassList("aic-rail__btn");
 
             // Accent marker on the strip's outer edge, shown only when the option is on.
@@ -472,17 +502,27 @@ namespace UtilityTools.AIConsole
             marker.AddToClassList("aic-rail__marker");
             item.Root.Add(marker);
 
+            var iconBox = new VisualElement();
+            iconBox.AddToClassList("aic-rail__iconbox");
+            item.Root.Add(iconBox);
+
             item.Icon = new Image();
             item.Icon.AddToClassList("aic-rail__icon");
-            item.Root.Add(item.Icon);
+            iconBox.Add(item.Icon);
 
-            item.Fallback = new Label(fallback);
+            string text = label();
+            item.Fallback = new Label(text.Length > 2 ? text.Substring(0, 2) : text);
             item.Fallback.AddToClassList("aic-rail__fallback");
-            item.Root.Add(item.Fallback);
+            iconBox.Add(item.Fallback);
 
             item.Badge = new Label();
             item.Badge.AddToClassList("aic-rail__badge");
-            item.Root.Add(item.Badge);
+            iconBox.Add(item.Badge);
+
+            // Shown in Expanded mode only (see USS).
+            item.Name = new Label(text);
+            item.Name.AddToClassList("aic-rail__name");
+            item.Root.Add(item.Name);
 
             item.Root.RegisterCallback<ClickEvent>(e =>
             {
@@ -524,11 +564,17 @@ namespace UtilityTools.AIConsole
         private void UpdateRail()
         {
             if (_rail == null) return;
-            bool open = User.railOpen;
-            _rail.EnableInClassList("aic-rail--collapsed", !open);
-            _railToggleIcon.image = EditorIcon(open ? "tab_prev" : "tab_next");
-            _railToggle.text = _railToggleIcon.image == null ? (open ? "‹" : "›") : "";
-            _railToggle.tooltip = open ? "Hide the side bar" : "Show the side bar";
+            var mode = User.railMode;
+            _rail.EnableInClassList("aic-rail--expanded", mode == RailMode.Expanded);
+            _rail.EnableInClassList("aic-rail--compact", mode == RailMode.Compact);
+            _rail.EnableInClassList("aic-rail--hidden", mode == RailMode.Hidden);
+
+            bool expanded = mode == RailMode.Expanded;
+            _railToggleIcon.image = EditorIcon(expanded ? "tab_prev" : "tab_next");
+            _railToggle.text = _railToggleIcon.image == null ? (expanded ? "‹" : "›") : "";
+            _railToggle.tooltip = mode == RailMode.Hidden ? "Show the side strip"
+                : expanded ? "Icons only" : "Show names";
+            _rail.tooltip = mode == RailMode.Hidden ? "Show the side strip" : null;
 
             foreach (var item in _railItemsList)
             {
@@ -536,13 +582,43 @@ namespace UtilityTools.AIConsole
                 item.Icon.image = tex;
                 item.Icon.EnableInClassList("aic-hidden", tex == null);
                 item.Fallback.EnableInClassList("aic-hidden", tex != null);
+                item.Name.text = item.Label();
                 item.Root.tooltip = item.Tip();
                 item.Root.EnableInClassList("aic-rail__btn--on", item.IsOn != null && item.IsOn());
 
                 string badge = item.BadgeText?.Invoke();
                 item.Badge.text = badge ?? "";
-                item.Badge.EnableInClassList("aic-hidden", string.IsNullOrEmpty(badge));
+                item.Badge.EnableInClassList("aic-hidden", string.IsNullOrEmpty(badge) || expanded);
             }
+        }
+
+        // ---------- Text size ----------
+        // Six steps; each maps to a root class (aic--fs-N) whose USS variables size text, rows, chips and the strip.
+        private static readonly int[] TextSizes = { 11, 12, 13, 14, 16, 18 };
+        private static readonly float[] RowHeights = { 22, 24, 26, 28, 32, 36 };
+        private const int DefaultTextSize = 2;
+
+        private int TextSizePx => TextSizes[Mathf.Clamp(User.textSize, 0, TextSizes.Length - 1)];
+
+        private void SetTextSize(int step)
+        {
+            User.textSize = Mathf.Clamp(step, 0, TextSizes.Length - 1);
+            SaveUser();
+            ApplyTextSize();
+        }
+
+        private void ApplyTextSize()
+        {
+            var root = rootVisualElement;
+            for (int i = 0; i < TextSizes.Length; i++) root.EnableInClassList("aic--fs-" + i, i == User.textSize);
+            if (_list != null)
+            {
+                _list.fixedItemHeight = RowHeight;
+                _list.RefreshItems();
+            }
+
+            RefreshDetails(true);
+            UpdateRail();
         }
 
         private static DropdownMenuAction.Status Check(bool on) =>
@@ -641,25 +717,100 @@ namespace UtilityTools.AIConsole
             _banner.style.display = compiling || compileErrors > 0 ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
-        // ---------- Systems ----------
+        // ---------- Tags bar ----------
+        // Every log can carry several tags (its ULog system + [UI][Boss] prefixes + Tagged(...)).
+        // Chips filter by one or more tags (Any / All), colours are edited in place, choices are remembered.
+        private VisualElement _tagsRow, _tagEditor, _tagEditorRows;
+        private Label _tagsTitle, _matchAny, _matchAll, _tagsClear, _tagsEdit;
+        private string _tagEditorSignature = "";
+
         private VisualElement BuildSystems()
         {
             _systems = new VisualElement();
-            _systems.AddToClassList("aic-systems");
+            _systems.AddToClassList("aic-tags");
 
-            _systemsArrow = MakeArrow("Show or hide the systems bar", () =>
+            _tagsRow = new VisualElement();
+            _tagsRow.AddToClassList("aic-systems");
+            _systems.Add(_tagsRow);
+
+            _systemsArrow = MakeArrow("Show or hide the tags bar", () =>
             {
                 User.systemsOpen = !User.systemsOpen;
                 SaveUser();
                 _systemsSignature = "";
                 MarkDirty();
             });
-            _systems.Add(_systemsArrow);
+            _tagsRow.Add(_systemsArrow);
+
+            _tagsTitle = new Label("TAGS");
+            _tagsTitle.AddToClassList("aic-tags__title");
+            _tagsRow.Add(_tagsTitle);
 
             _systemsChips = new VisualElement();
             _systemsChips.AddToClassList("aic-systems__chips");
-            _systems.Add(_systemsChips);
+            _tagsRow.Add(_systemsChips);
+
+            var controls = new VisualElement();
+            controls.AddToClassList("aic-tags__controls");
+            _tagsRow.Add(controls);
+
+            // Any / All segmented switch: how several selected tags combine.
+            var seg = new VisualElement { tooltip = "With several tags selected: show logs that have ANY of them, or ALL of them" };
+            seg.AddToClassList("aic-seg");
+            _matchAny = SegButton(seg, "Any", () => SetMatchAll(false));
+            _matchAll = SegButton(seg, "All", () => SetMatchAll(true));
+            controls.Add(seg);
+
+            _tagsClear = new Label("Clear") { tooltip = "Show all tags again" };
+            _tagsClear.AddToClassList("aic-link");
+            _tagsClear.AddManipulator(new Clickable(() =>
+            {
+                _systemFilter.Clear();
+                SaveTagFilter();
+            }));
+            controls.Add(_tagsClear);
+
+            _tagsEdit = new Label("Edit tags") { tooltip = "Add tags and pick their colours (shared with the team)" };
+            _tagsEdit.AddToClassList("aic-link");
+            _tagsEdit.AddManipulator(new Clickable(() =>
+            {
+                User.tagEditorOpen = !User.tagEditorOpen;
+                SaveUser();
+                _tagEditorSignature = "";
+                _systemsSignature = "";
+                MarkDirty();
+            }));
+            controls.Add(_tagsEdit);
+
+            _tagEditor = new VisualElement();
+            _tagEditor.AddToClassList("aic-tag-editor");
+            _systems.Add(_tagEditor);
             return _systems;
+        }
+
+        private static Label SegButton(VisualElement parent, string text, Action onClick)
+        {
+            var b = new Label(text);
+            b.AddToClassList("aic-seg__btn");
+            b.AddManipulator(new Clickable(onClick));
+            parent.Add(b);
+            return b;
+        }
+
+        private void SetMatchAll(bool all)
+        {
+            User.tagMatchAll = all;
+            SaveUser();
+            _systemsSignature = "";
+            MarkDirty();
+        }
+
+        private void SaveTagFilter()
+        {
+            User.tagFilter = new List<string>(_systemFilter);
+            SaveUser();
+            _systemsSignature = "";
+            MarkDirty();
         }
 
         /// <summary>Clickable ▾/▸ label used as the header of collapsible panels.</summary>
@@ -671,54 +822,101 @@ namespace UtilityTools.AIConsole
             return arrow;
         }
 
-        private void UpdateSystems()
+        /// <summary>Tags with logs, custom tags (even unused), and switched-off systems.</summary>
+        private List<string> TagNames()
         {
             var names = new List<string>(_systemCounts.Keys);
+            var seen = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+            foreach (var t in ConsoleProjectSettings.instance.tags)
+                if (!string.IsNullOrEmpty(t.name) && seen.Add(t.name)) names.Add(t.name);
             foreach (var ch in LogChannel.All)
-                if (ch != ULog.Default && !ch.Enabled && !names.Contains(ch.Name)) names.Add(ch.Name);
+                if (ch != ULog.Default && !ch.Enabled && seen.Add(ch.Name)) names.Add(ch.Name);
+            foreach (var t in _systemFilter)
+                if (seen.Add(t)) names.Add(t); // keep selected chips visible even with no logs yet
             names.Sort(StringComparer.OrdinalIgnoreCase);
+            return names;
+        }
 
-            // Rebuild chips only when names, counts or selection changed.
+        private void UpdateSystems()
+        {
+            var names = TagNames();
+
+            // Rebuild chips only when names, counts, colours or selection changed.
             var sig = new System.Text.StringBuilder();
             foreach (var n in names)
             {
                 _systemCounts.TryGetValue(n, out int c);
                 _systemErrors.TryGetValue(n, out int e);
                 sig.Append(n).Append(c).Append('/').Append(e).Append(_systemFilter.Contains(n) ? '*' : '-')
-                    .Append(IsChannelOff(n) ? 'x' : 'o').Append('|');
+                    .Append(IsChannelOff(n) ? 'x' : 'o').Append(ChannelConfig.ColorFor(n)).Append('|');
             }
 
-            string signature = sig.ToString() + (User.systemsOpen ? "open" : "closed");
-            _systems.style.display = names.Count > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            sig.Append(User.systemsOpen).Append(User.tagMatchAll).Append(User.tagEditorOpen);
+            string signature = sig.ToString();
+            // Always shown, so tags can be added (Edit tags) before any log uses them.
+            _systems.style.display = DisplayStyle.Flex;
+            UpdateTagEditor(names);
             if (signature == _systemsSignature) return;
             _systemsSignature = signature;
 
             bool open = User.systemsOpen;
             _systems.EnableInClassList("aic-panel--collapsed", !open);
-            _systemsArrow.text = open ? "▾" : $"▸  Systems ({names.Count}" +
-                                         (_systemFilter.Count > 0 ? $", {_systemFilter.Count} filtered)" : ")");
+            _systemsArrow.text = open ? "▾" : $"▸  Tags ({names.Count}" +
+                                         (_systemFilter.Count > 0 ? $", {_systemFilter.Count} selected)" : ")");
+            _tagsTitle.EnableInClassList("aic-hidden", !open);
+
+            bool several = _systemFilter.Count > 1;
+            _matchAny.parent.EnableInClassList("aic-hidden", !open || !several);
+            _matchAny.EnableInClassList("aic-seg__btn--on", !User.tagMatchAll);
+            _matchAll.EnableInClassList("aic-seg__btn--on", User.tagMatchAll);
+            _tagsClear.EnableInClassList("aic-hidden", !open || _systemFilter.Count == 0);
+            _tagsEdit.EnableInClassList("aic-hidden", !open);
+            _tagsEdit.EnableInClassList("aic-link--on", User.tagEditorOpen);
+
             _systemsChips.Clear();
             if (!open) return;
+            if (names.Count == 0)
+            {
+                var hint = new Label("No tags yet — write logs as [UI] text or Spawn.Tagged(\"UI\"), or add one with Edit tags.");
+                hint.AddToClassList("aic-tags__hint");
+                _systemsChips.Add(hint);
+                return;
+            }
+
             foreach (var n in names) _systemsChips.Add(MakeChip(n));
         }
 
-        private VisualElement MakeChip(string system)
+        private VisualElement MakeChip(string tag)
         {
-            _systemCounts.TryGetValue(system, out int count);
-            _systemErrors.TryGetValue(system, out int errors);
-            bool off = IsChannelOff(system);
+            _systemCounts.TryGetValue(tag, out int count);
+            _systemErrors.TryGetValue(tag, out int errors);
+            bool off = IsChannelOff(tag);
+            bool selected = _systemFilter.Contains(tag);
 
-            var chip = new VisualElement { tooltip = off ? system + " is switched off (only errors are logged)" : "Click to filter by " + system };
+            var chip = new VisualElement
+            {
+                tooltip = off ? tag + " is switched off (only errors are logged)"
+                    : selected ? "Click to remove " + tag + " from the filter"
+                    : "Click to filter by " + tag + " (click more tags to combine)"
+            };
             chip.AddToClassList("aic-chip");
-            chip.EnableInClassList("aic-chip--selected", _systemFilter.Contains(system));
+            chip.EnableInClassList("aic-chip--selected", selected);
             chip.EnableInClassList("aic-chip--off", off);
+
+            var color = ParseColor(ChannelConfig.ColorFor(tag));
+            if (selected)
+            {
+                chip.style.borderTopColor = chip.style.borderBottomColor = chip.style.borderLeftColor =
+                    chip.style.borderRightColor = color;
+                chip.style.backgroundColor = new Color(color.r, color.g, color.b, 0.22f);
+            }
 
             var dot = new VisualElement();
             dot.AddToClassList("aic-chip__dot");
-            dot.style.backgroundColor = ParseColor(ChannelConfig.ColorFor(system));
+            dot.style.backgroundColor = color;
             chip.Add(dot);
 
-            var label = new Label(system);
+            var label = new Label(tag);
             label.AddToClassList("aic-chip__label");
             chip.Add(label);
 
@@ -729,27 +927,139 @@ namespace UtilityTools.AIConsole
 
             chip.AddManipulator(new Clickable(() =>
             {
-                if (!_systemFilter.Remove(system)) _systemFilter.Add(system);
-                MarkDirty();
+                if (!_systemFilter.Remove(tag)) _systemFilter.Add(tag);
+                SaveTagFilter();
             }));
             chip.AddManipulator(new ContextualMenuManipulator(evt =>
             {
-                evt.menu.AppendAction("Show only " + system, _ =>
+                evt.menu.AppendAction("Show only " + tag, _ =>
                 {
                     _systemFilter.Clear();
-                    _systemFilter.Add(system);
+                    _systemFilter.Add(tag);
+                    SaveTagFilter();
+                });
+                evt.menu.AppendAction("Show all tags", _ =>
+                {
+                    _systemFilter.Clear();
+                    SaveTagFilter();
+                });
+                if (IsChannel(tag))
+                {
+                    evt.menu.AppendSeparator();
+                    var mode = User.GetOverride(tag);
+                    evt.menu.AppendAction("Mute for me", _ => SetOverride(tag, ChannelOverride.Off), _ => Check(mode == ChannelOverride.Off));
+                    evt.menu.AppendAction("Force on for me", _ => SetOverride(tag, ChannelOverride.On), _ => Check(mode == ChannelOverride.On));
+                    evt.menu.AppendAction("Use project setting", _ => SetOverride(tag, ChannelOverride.Default), _ => Check(mode == ChannelOverride.Default));
+                }
+
+                evt.menu.AppendSeparator();
+                evt.menu.AppendAction("Edit tag colours…", _ =>
+                {
+                    User.tagEditorOpen = true;
+                    SaveUser();
+                    _tagEditorSignature = "";
+                    _systemsSignature = "";
                     MarkDirty();
                 });
-                evt.menu.AppendAction("Show all systems", _ => { _systemFilter.Clear(); MarkDirty(); });
-                evt.menu.AppendSeparator();
-                var mode = User.GetOverride(system);
-                evt.menu.AppendAction("Mute for me", _ => SetOverride(system, ChannelOverride.Off), _ => Check(mode == ChannelOverride.Off));
-                evt.menu.AppendAction("Force on for me", _ => SetOverride(system, ChannelOverride.On), _ => Check(mode == ChannelOverride.On));
-                evt.menu.AppendAction("Use project setting", _ => SetOverride(system, ChannelOverride.Default), _ => Check(mode == ChannelOverride.Default));
-                evt.menu.AppendSeparator();
-                evt.menu.AppendAction("System settings…", _ => SettingsService.OpenProjectSettings(SettingsPath));
             }));
             return chip;
+        }
+
+        // ---------- Tag editor (inline) ----------
+        private void UpdateTagEditor(List<string> names)
+        {
+            bool open = User.tagEditorOpen && User.systemsOpen;
+            _tagEditor.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
+            if (!open) return;
+
+            // Rebuilt only when the set of tags changes — never while a colour picker is in use.
+            string signature = string.Join("|", names);
+            if (signature == _tagEditorSignature) return;
+            _tagEditorSignature = signature;
+            _tagEditor.Clear();
+
+            var add = new VisualElement();
+            add.AddToClassList("aic-tag-editor__add");
+            var newName = new TextField { tooltip = "Tag name, e.g. UI — logs written as [UI] text, or Tagged(\"UI\")" };
+            newName.AddToClassList("aic-tag-editor__name-field");
+            var newColor = new ColorField { value = new Color(0.35f, 0.63f, 1f), showAlpha = false, showEyeDropper = false };
+            newColor.AddToClassList("aic-tag-editor__color");
+            var addButton = new Button(() =>
+            {
+                string n = newName.value?.Trim().Trim('[', ']');
+                if (string.IsNullOrEmpty(n)) return;
+                var project = ConsoleProjectSettings.instance;
+                project.SetTagColor(n, "#" + ColorUtility.ToHtmlStringRGB(newColor.value));
+                project.SaveAndNotify();
+                newName.value = "";
+                _tagEditorSignature = "";
+                MarkDirty();
+            }) { text = "Add tag" };
+            var hint = new Label("New tag");
+            hint.AddToClassList("aic-tag-editor__hint");
+            add.Add(hint);
+            add.Add(newName);
+            add.Add(newColor);
+            add.Add(addButton);
+            _tagEditor.Add(add);
+
+            _tagEditorRows = new VisualElement();
+            _tagEditorRows.AddToClassList("aic-tag-editor__rows");
+            _tagEditor.Add(_tagEditorRows);
+
+            foreach (var n in names)
+            {
+                string tag = n;
+                var row = new VisualElement();
+                row.AddToClassList("aic-tag-editor__row");
+
+                ColorUtility.TryParseHtmlString(ChannelConfig.ColorFor(tag), out var c);
+                var color = new ColorField { value = c, showAlpha = false, showEyeDropper = false, tooltip = "Colour of " + tag };
+                color.AddToClassList("aic-tag-editor__color");
+                color.RegisterValueChangedCallback(e =>
+                {
+                    var project = ConsoleProjectSettings.instance;
+                    project.SetTagColor(tag, "#" + ColorUtility.ToHtmlStringRGB(e.newValue));
+                    project.SaveAndNotify();
+                    _systemsSignature = "";
+                    MarkDirty();
+                });
+                row.Add(color);
+
+                var name = new Label(tag);
+                name.AddToClassList("aic-tag-editor__label");
+                row.Add(name);
+
+                _systemCounts.TryGetValue(tag, out int count);
+                var cnt = new Label(count + (count == 1 ? " log" : " logs"));
+                cnt.AddToClassList("aic-tag-editor__count");
+                row.Add(cnt);
+
+                if (ConsoleProjectSettings.instance.FindTag(tag) != null)
+                {
+                    var reset = new Label("Remove") { tooltip = "Remove the custom colour (and the tag, if no logs use it)" };
+                    reset.AddToClassList("aic-link");
+                    reset.AddManipulator(new Clickable(() =>
+                    {
+                        var project = ConsoleProjectSettings.instance;
+                        project.tags.RemoveAll(t => string.Equals(t.name, tag, StringComparison.OrdinalIgnoreCase));
+                        project.SaveAndNotify();
+                        _tagEditorSignature = "";
+                        _systemsSignature = "";
+                        MarkDirty();
+                    }));
+                    row.Add(reset);
+                }
+
+                _tagEditorRows.Add(row);
+            }
+        }
+
+        private static bool IsChannel(string name)
+        {
+            foreach (var ch in LogChannel.All)
+                if (ch != ULog.Default && ch.Name == name) return true;
+            return false;
         }
 
         private void SetOverride(string system, ChannelOverride mode)
@@ -880,9 +1190,12 @@ namespace UtilityTools.AIConsole
         {
             public VisualElement Root, Strip, RuleLeft, RuleRight;
             public Image Icon;
-            public Label Time, System, Message, Fields, Badge, Id;
+            public Label Time, System, Message, Fields, Badge, Id, MoreTags;
+            public Label[] TagChips; // System + 2 more tag chips; the rest is "+n"
             public ConsoleEntry Entry;
         }
+
+        private const int MaxRowTags = 3;
 
         private VisualElement BuildList()
         {
@@ -917,6 +1230,10 @@ namespace UtilityTools.AIConsole
             v.Icon = Add<Image>(v.Root, "aic-row__icon");
             v.Time = Add<Label>(v.Root, "aic-row__time");
             v.System = Add<Label>(v.Root, "aic-row__system");
+            v.TagChips = new Label[MaxRowTags];
+            v.TagChips[0] = v.System;
+            for (int i = 1; i < MaxRowTags; i++) v.TagChips[i] = Add<Label>(v.Root, "aic-row__system");
+            v.MoreTags = Add<Label>(v.Root, "aic-row__more");
             v.RuleLeft = Add<VisualElement>(v.Root, "aic-row__rule");
             v.Message = Add<Label>(v.Root, "aic-row__msg");
             v.RuleRight = Add<VisualElement>(v.Root, "aic-row__rule");
@@ -955,21 +1272,33 @@ namespace UtilityTools.AIConsole
             v.Icon.EnableInClassList("aic-hidden", marker);
             v.Icon.image = e.IsError ? s_ErrorIcon : e.IsWarning ? s_WarnIcon : s_InfoIcon;
 
-            Color stripColor = e.system != null ? ParseColor(e.color ?? ChannelConfig.ColorFor(e.system))
+            string firstTag = null;
+            foreach (var t in e.AllTags) { firstTag = t; break; }
+            Color stripColor = firstTag != null ? ParseColor(TagColor(e, firstTag))
                 : e.IsError ? ParseColor("#ff5f5a") : e.IsWarning ? ParseColor("#f2c14e") : Color.clear;
             v.Strip.style.backgroundColor = marker ? Color.clear : stripColor;
 
             v.Time.text = new DateTime(e.ticks, DateTimeKind.Utc).ToLocalTime().ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture);
 
-            if (e.system != null && !marker)
+            // Tag chips: up to MaxRowTags, then "+n".
+            int shown = 0, total = 0;
+            if (!marker)
             {
-                var c = ParseColor(e.color ?? ChannelConfig.ColorFor(e.system));
-                v.System.text = e.system;
-                v.System.style.color = c;
-                v.System.style.backgroundColor = new Color(c.r, c.g, c.b, 0.16f);
+                foreach (var t in e.AllTags)
+                {
+                    total++;
+                    if (shown >= MaxRowTags) continue;
+                    var chip = v.TagChips[shown++];
+                    var c = ParseColor(TagColor(e, t));
+                    chip.text = t;
+                    chip.style.color = c;
+                    chip.style.backgroundColor = new Color(c.r, c.g, c.b, 0.16f);
+                }
             }
 
-            v.System.EnableInClassList("aic-hidden", e.system == null || marker);
+            for (int i = 0; i < MaxRowTags; i++) v.TagChips[i].EnableInClassList("aic-hidden", i >= shown);
+            v.MoreTags.text = "+" + (total - shown).ToString(CultureInfo.InvariantCulture);
+            v.MoreTags.EnableInClassList("aic-hidden", total <= shown);
             v.System.RemoveFromClassList("aic-row__file");
 
             if (e.IsCompile && e.file != null)
@@ -1017,15 +1346,17 @@ namespace UtilityTools.AIConsole
             _systemCounts.Clear();
             _systemErrors.Clear();
 
+            // Count every tag of every entry (system + extra tags) for the tag bar.
             foreach (var e in ConsoleStore.Entries)
             {
-                if (e.system == null) continue;
-                _systemCounts.TryGetValue(e.system, out int c);
-                _systemCounts[e.system] = c + 1;
-                if (e.IsError)
+                if (e.system == null && e.TagCount == 0) continue;
+                foreach (var tag in e.AllTags)
                 {
-                    _systemErrors.TryGetValue(e.system, out int er);
-                    _systemErrors[e.system] = er + 1;
+                    _systemCounts.TryGetValue(tag, out int c);
+                    _systemCounts[tag] = c + 1;
+                    if (!e.IsError) continue;
+                    _systemErrors.TryGetValue(tag, out int er);
+                    _systemErrors[tag] = er + 1;
                 }
             }
 
@@ -1077,8 +1408,27 @@ namespace UtilityTools.AIConsole
             else if (e.IsWarning) { if (!u.showWarning) return false; }
             else if (!u.showLog) return false;
 
-            if (_systemFilter.Count > 0 && (e.system == null || !_systemFilter.Contains(e.system))) return false;
+            if (_systemFilter.Count > 0 && !MatchesTagFilter(e, u.tagMatchAll)) return false;
             return _query.Matches(e);
+        }
+
+        /// <summary>Colour for one of an entry's tags (the channel's own colour for its system).</summary>
+        private static string TagColor(ConsoleEntry e, string tag) =>
+            tag == e.system && e.color != null && ConsoleProjectSettings.instance.FindTag(tag) == null
+                ? e.color
+                : ChannelConfig.ColorFor(tag);
+
+        /// <summary>Any: the log has at least one selected tag. All: it has every selected tag.</summary>
+        private bool MatchesTagFilter(ConsoleEntry e, bool all)
+        {
+            foreach (var tag in _systemFilter)
+            {
+                bool has = e.HasTag(tag);
+                if (all && !has) return false;
+                if (!all && has) return true;
+            }
+
+            return all;
         }
 
         private void SortRows(int start, string mode)
@@ -1166,6 +1516,8 @@ namespace UtilityTools.AIConsole
             {
                 // Filtered out: clear filters that hide it, then retry.
                 _systemFilter.Clear();
+                User.tagFilter.Clear();
+                SaveUser();
                 _search.value = "";
                 Rebuild();
                 index = _rows.IndexOf(e);
@@ -1389,14 +1741,21 @@ namespace UtilityTools.AIConsole
                 e.kind == EntryKind.Marker ? "aic-d-kind--marker" : "aic-d-kind--log");
             header.Add(kind);
 
-            if (e.system != null)
+            foreach (var tag in e.AllTags)
             {
-                var sys = new Label(e.system);
-                sys.AddToClassList("aic-row__system");
-                var c = ParseColor(e.color ?? ChannelConfig.ColorFor(e.system));
-                sys.style.color = c;
-                sys.style.backgroundColor = new Color(c.r, c.g, c.b, 0.16f);
-                header.Add(sys);
+                string t = tag;
+                var chip = new Label(t) { tooltip = "Click to filter by " + t };
+                chip.AddToClassList("aic-row__system");
+                chip.AddToClassList("aic-d-tag");
+                var c = ParseColor(TagColor(e, t));
+                chip.style.color = c;
+                chip.style.backgroundColor = new Color(c.r, c.g, c.b, 0.16f);
+                chip.AddManipulator(new Clickable(() =>
+                {
+                    _systemFilter.Add(t);
+                    SaveTagFilter();
+                }));
+                header.Add(chip);
             }
 
             Meta(header, "#" + e.id);
@@ -1617,16 +1976,24 @@ namespace UtilityTools.AIConsole
             menu.AppendAction("Copy #id", _ => EditorGUIUtility.systemCopyBuffer = "#" + e.id);
             menu.AppendSeparator();
             if (e.fingerprint != null) menu.AppendAction("Show Similar", _ => _search.value = "fp:" + e.fingerprint);
-            if (e.system != null)
+            foreach (var tag in e.AllTags)
             {
-                menu.AppendAction("Show Only " + e.system, _ =>
+                string t = tag;
+                menu.AppendAction("Filter by Tag/" + t, _ =>
+                {
+                    _systemFilter.Add(t);
+                    SaveTagFilter();
+                });
+                menu.AppendAction("Show Only Tag/" + t, _ =>
                 {
                     _systemFilter.Clear();
-                    _systemFilter.Add(e.system);
-                    MarkDirty();
+                    _systemFilter.Add(t);
+                    SaveTagFilter();
                 });
-                menu.AppendAction("Mute " + e.system + " for Me", _ => SetOverride(e.system, ChannelOverride.Off));
             }
+
+            if (e.system != null && IsChannel(e.system))
+                menu.AppendAction("Mute " + e.system + " for Me", _ => SetOverride(e.system, ChannelOverride.Off));
         }
 
         private static string PlainText(ConsoleEntry e)
@@ -1667,6 +2034,28 @@ namespace UtilityTools.AIConsole
         // ---------- Keyboard ----------
         private void OnKeyDown(KeyDownEvent evt)
         {
+            // Text size: Ctrl/Cmd + = / + (larger), - (smaller), 0 (reset).
+            if (evt.actionKey && (evt.keyCode == KeyCode.Equals || evt.keyCode == KeyCode.KeypadPlus || evt.keyCode == KeyCode.Plus))
+            {
+                SetTextSize(User.textSize + 1);
+                evt.StopPropagation();
+                return;
+            }
+
+            if (evt.actionKey && (evt.keyCode == KeyCode.Minus || evt.keyCode == KeyCode.KeypadMinus))
+            {
+                SetTextSize(User.textSize - 1);
+                evt.StopPropagation();
+                return;
+            }
+
+            if (evt.actionKey && (evt.keyCode == KeyCode.Alpha0 || evt.keyCode == KeyCode.Keypad0))
+            {
+                SetTextSize(DefaultTextSize);
+                evt.StopPropagation();
+                return;
+            }
+
             if (evt.actionKey && evt.keyCode == KeyCode.F)
             {
                 _search.Focus();

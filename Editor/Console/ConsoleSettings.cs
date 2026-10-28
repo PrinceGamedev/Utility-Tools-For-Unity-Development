@@ -18,6 +18,14 @@ namespace UtilityTools.AIConsole
 
     internal enum ChannelOverride { Default, On, Off }
 
+    /// <summary>A custom tag colour, e.g. UI → blue (team setting).</summary>
+    [Serializable]
+    internal sealed class TagSetting
+    {
+        public string name;
+        public string color;
+    }
+
     [Serializable]
     internal sealed class ChannelUserSetting
     {
@@ -33,6 +41,7 @@ namespace UtilityTools.AIConsole
         public LogLevel globalMinLevel = LogLevel.Verbose;
         public bool richTextTags = true;
         public List<ChannelSetting> channels = new List<ChannelSetting>();
+        public List<TagSetting> tags = new List<TagSetting>();
 
         // Capture
         public int maxEntries = 10000;
@@ -60,6 +69,21 @@ namespace UtilityTools.AIConsole
             return null;
         }
 
+        public TagSetting FindTag(string tag)
+        {
+            for (int i = 0; i < tags.Count; i++)
+                if (string.Equals(tags[i].name, tag, StringComparison.OrdinalIgnoreCase)) return tags[i];
+            return null;
+        }
+
+        /// <summary>Adds or recolours a custom tag.</summary>
+        public void SetTagColor(string tag, string colorHex)
+        {
+            var t = FindTag(tag);
+            if (t == null) tags.Add(t = new TagSetting { name = tag.Trim() });
+            t.color = LogChannel.NormalizeHex(colorHex);
+        }
+
         public ChannelSetting GetOrAdd(string channel)
         {
             var s = Find(channel);
@@ -78,6 +102,9 @@ namespace UtilityTools.AIConsole
     /// <summary>Where the details pane docks. Auto = right when the window is wide, bottom otherwise.</summary>
     internal enum DetailsDock { Auto, Bottom, Right }
 
+    /// <summary>Side strip: icons + names, icons only, or hidden (a thin edge to bring it back).</summary>
+    internal enum RailMode { Expanded, Compact, Hidden }
+
     /// <summary>Personal settings — UserSettings/UtilityToolsConsole.asset (not committed by default).</summary>
     [FilePath("UserSettings/UtilityToolsConsole.asset", FilePathAttribute.Location.ProjectFolder)]
     internal sealed class ConsoleUserSettings : ScriptableSingleton<ConsoleUserSettings>
@@ -94,7 +121,15 @@ namespace UtilityTools.AIConsole
         public DetailsDock detailsDock = DetailsDock.Auto;
         public bool detailsOpen = true;
         public bool systemsOpen = true;
-        public bool railOpen = true;
+        public RailMode railMode = RailMode.Expanded;
+
+        /// <summary>Text size step 0–5 (11 → 18 px); scales rows, details, chips and the side strip.</summary>
+        public int textSize = 2;
+
+        // Tag filter (persisted): selected tags and whether a log must have all of them or any.
+        public List<string> tagFilter = new List<string>();
+        public bool tagMatchAll;
+        public bool tagEditorOpen;
         public string search = "";
         public bool showLog = true, showWarning = true, showError = true;
         public string sortMode = "time";
@@ -144,11 +179,22 @@ namespace UtilityTools.AIConsole
             else EditorApplication.delayCall += () => Apply(channel);
         }
 
+        // Snapshot for ULog.TagColor, which can run on any thread (settings are main-thread only).
+        private static volatile Dictionary<string, string> s_TagColors =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         public static void ApplyAll()
         {
             var project = ConsoleProjectSettings.instance;
             ULog.MinLevel = project.globalMinLevel;
             ULog.RichTextTags = project.richTextTags;
+
+            var colors = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var t in project.tags)
+                if (!string.IsNullOrEmpty(t.name) && !string.IsNullOrEmpty(t.color)) colors[t.name] = LogChannel.NormalizeHex(t.color);
+            s_TagColors = colors;
+            ULog.TagColor = tag => s_TagColors.TryGetValue(tag, out var c) ? c : LogChannel.ColorFromName(tag);
+
             foreach (var channel in LogChannel.All) Apply(channel);
         }
 
@@ -167,10 +213,15 @@ namespace UtilityTools.AIConsole
             if (!string.IsNullOrEmpty(s?.color)) channel.ColorHex = LogChannel.NormalizeHex(s.color);
         }
 
-        /// <summary>Colour for a system name: configured channel colour, else the stable generated one.</summary>
+        /// <summary>
+        /// Colour for a tag or system: custom tag colour, else configured channel colour, else the live
+        /// channel's colour, else a stable colour generated from the name.
+        /// </summary>
         public static string ColorFor(string system)
         {
             if (string.IsNullOrEmpty(system)) return null;
+            var tag = ConsoleProjectSettings.instance.FindTag(system);
+            if (!string.IsNullOrEmpty(tag?.color)) return LogChannel.NormalizeHex(tag.color);
             var s = ConsoleProjectSettings.instance.Find(system);
             if (!string.IsNullOrEmpty(s?.color)) return LogChannel.NormalizeHex(s.color);
             foreach (var c in LogChannel.All)

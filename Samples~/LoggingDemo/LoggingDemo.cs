@@ -35,6 +35,17 @@ namespace UtilityTools.Samples
             ULog.Info("Untagged message on the default channel");
         }
 
+        [Button("Tagged Logs")]
+        private void TaggedLogs()
+        {
+            // A log can carry several tags: its system plus any extra ones. Filter them in the AI Console's
+            // Tags bar (pick several, Any / All) and give them colours with "Edit tags".
+            DemoSystems.Spawn.Tagged("UI", "Boss").Info("Boss health bar shown", ("hp", 500));
+            DemoSystems.Network.Tagged("UI").Warning("Lobby list slow", ("ms", 900));
+            ULog.Tagged("Tutorial").Info("Step 3 reached");
+            Debug.Log("[UI][Audio] Button click sound played"); // plain Debug.Log tags work too
+        }
+
         [Button("Nested Exception")]
         private void NestedException()
         {

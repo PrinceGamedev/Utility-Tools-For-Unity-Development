@@ -17,6 +17,9 @@ namespace UtilityTools.Logging
         public string Message { get; }
         public Object Context { get; }
         public IReadOnlyList<KeyValuePair<string, object>> Fields { get; }
+
+        /// <summary>Extra tags besides the channel (from <see cref="LogChannel.Tagged"/>). Never null.</summary>
+        public IReadOnlyList<string> Tags { get; }
         public Exception Exception { get; }
         public bool IsAssert { get; }
         public DateTime TimeUtc { get; }
@@ -27,11 +30,14 @@ namespace UtilityTools.Logging
         public int ThreadId { get; }
 
         private static readonly KeyValuePair<string, object>[] NoFields = new KeyValuePair<string, object>[0];
+        private static readonly string[] NoTags = new string[0];
 
         internal LogRecord(LogChannel channel, LogLevel level, string message, Object context,
-            (string key, object value)[] fields, Exception exception, bool isAssert, int frame, int threadId)
+            (string key, object value)[] fields, Exception exception, bool isAssert, int frame, int threadId,
+            string[] tags = null)
         {
             Channel = channel;
+            Tags = tags != null && tags.Length > 0 ? tags : NoTags;
             Level = level;
             Message = message ?? "";
             Context = context;

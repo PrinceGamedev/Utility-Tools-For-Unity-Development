@@ -102,7 +102,7 @@ namespace UtilityTools.AIConsole
                 sb.Append("- #").Append(e.id);
                 if (g.Count > 1) sb.Append(" ×").Append(g.Count);
                 sb.Append(' ').Append(e.KindName);
-                if (e.system != null) sb.Append(" [").Append(e.system).Append(']');
+                if (e.TagCount > 0 || e.system != null) sb.Append(' ').Append(e.TagsText);
                 sb.Append(' ').Append(Clip(e.FirstLine, MaxDigestLineChars)).Append('\n');
 
                 AppendFrames(sb, e, userFrames, "  at ");
@@ -162,7 +162,7 @@ namespace UtilityTools.AIConsole
             var sb = new StringBuilder(512);
             var g = ConsoleStore.GroupOf(e);
             sb.Append("#").Append(e.id).Append(' ').Append(e.KindName);
-            if (e.system != null) sb.Append(" [").Append(e.system).Append(']');
+            if (e.TagCount > 0 || e.system != null) sb.Append(' ').Append(e.TagsText);
             if (g != null && g.Count > 1) sb.Append(" ×").Append(g.Count);
             sb.Append(" @ ").Append(Iso(e.ticks)).Append(e.play ? " (play" : " (edit");
             if (e.frame >= 0) sb.Append(", frame ").Append(e.frame);
@@ -186,6 +186,17 @@ namespace UtilityTools.AIConsole
             Prop(w, "t", Iso(e.ticks));
             Prop(w, "k", e.KindName);
             if (e.system != null) Prop(w, "sys", e.system);
+            if (e.TagCount > 0)
+            {
+                w.Append(",\"tags\":[");
+                for (int i = 0; i < e.tags.Length; i++)
+                {
+                    if (i > 0) w.Append(',');
+                    Str(w, e.tags[i]);
+                }
+
+                w.Append(']');
+            }
             Prop(w, "msg", e.IsCompile ? CompilerText(e) : Clip(e.message, MaxMessageChars));
 
             if (e.kind != EntryKind.Marker)
@@ -299,7 +310,7 @@ Live data from the Unity Editor. Cheapest first:
    (newest first). `#id` = entry id, `×N` = repeats, `at` lines are frames in project code only.
 3. `{folder}/session.jsonl` — one JSON object per entry, for details: search for `""id"":812` or read
    lines after a known last_id. Keys: id, t (UTC), k (log|warning|error|exception|assert|
-   compile-error|compile-warning|marker), sys (system/channel), msg, fp (same fp = same issue),
+   compile-error|compile-warning|marker), sys (system/channel), tags, msg, fp (same fp = same issue),
    mode, scene, frame, ctx (object path), f (fields), at (project frames), engine_frames, file/line/col.
    `session.prev.jsonl` holds the previous editor session.
 

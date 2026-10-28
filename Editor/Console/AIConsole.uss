@@ -102,26 +102,45 @@
     min-width: 0;
 }
 
-/* ---------- Side bar: slim icon strip ---------- */
+/* ---------- Side strip ----------
+   Expanded = icon + name, Compact = icons only, Hidden = thin edge (click to restore).
+   Sizes come from the text-size variables, so the strip grows with A+.
+   States: off = dimmed icon, hover = faint fill, on = subtle fill + full icon + accent marker on the edge. */
 .aic-rail {
-    width: 32px;
+    width: var(--aic-rail-w);
     flex-shrink: 0;
-    align-items: center;
     background-color: var(--aic-panel);
     border-right-width: 1px;
     border-color: var(--aic-border);
 }
 
+.aic-rail--expanded {
+    width: var(--aic-rail-w-exp);
+}
+
+.aic-rail--hidden {
+    width: 10px;
+}
+
+.aic-rail--hidden:hover {
+    background-color: var(--aic-hover);
+}
+
 .aic-rail__toggle {
-    width: 100%;
-    height: 22px;
+    height: 24px;
     flex-shrink: 0;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
     -unity-text-align: middle-center;
     color: var(--aic-dim);
     border-bottom-width: 1px;
     border-color: var(--aic-border);
+}
+
+.aic-rail--expanded .aic-rail__toggle {
+    justify-content: flex-end;
+    padding-right: 8px;
 }
 
 .aic-rail__toggle:hover {
@@ -131,14 +150,28 @@
 .aic-rail__toggle-icon {
     width: 12px;
     height: 12px;
-    opacity: 0.7;
+    opacity: 0.8;
+}
+
+.aic-rail--hidden .aic-rail__toggle {
+    border-bottom-width: 0;
+    height: 100%;
+    justify-content: flex-start;
+    padding-top: 8px;
+}
+
+.aic-rail--hidden .aic-rail__groups {
+    display: none;
 }
 
 .aic-rail__groups {
     flex-grow: 1;
-    width: 100%;
     align-items: center;
-    padding: 4px 0;
+    padding: 6px 0;
+}
+
+.aic-rail--expanded .aic-rail__groups {
+    align-items: stretch;
 }
 
 .aic-rail__spacer {
@@ -146,23 +179,57 @@
 }
 
 .aic-rail__sep {
-    width: 16px;
+    width: 60%;
     height: 1px;
-    margin: 5px 0;
+    margin: 6px 0;
+    align-self: center;
     background-color: var(--aic-border);
 }
 
-/* Button states (like Rider / VS Code tool strips):
-   off   — no background, icon dimmed
-   hover — faint background, icon brighter
-   on    — solid subtle fill, icon at full strength (never tinted), accent marker on the strip edge */
+.aic-rail--expanded .aic-rail__sep {
+    width: auto;
+    align-self: stretch;
+    margin: 6px 10px;
+}
+
 .aic-rail__btn {
-    width: 26px;
-    height: 26px;
+    width: var(--aic-rail-btn);
+    height: var(--aic-rail-btn);
     margin: 1px 0;
+    flex-direction: row;
     align-items: center;
     justify-content: center;
-    border-radius: 5px;
+    border-radius: 6px;
+}
+
+.aic-rail--expanded .aic-rail__btn {
+    width: auto;
+    margin: 1px 4px;
+    justify-content: flex-start;
+}
+
+.aic-rail__iconbox {
+    width: var(--aic-rail-btn);
+    height: 100%;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.aic-rail__name {
+    display: none;
+    flex-grow: 1;
+    font-size: var(--aic-fs-sm);
+    color: var(--aic-dim);
+    padding: 0 6px 0 0;
+    margin: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.aic-rail--expanded .aic-rail__name {
+    display: flex;
 }
 
 .aic-rail__btn:hover {
@@ -174,17 +241,21 @@
 }
 
 .aic-rail__icon {
-    width: 16px;
-    height: 16px;
-    opacity: 0.5;
+    width: var(--aic-rail-icon);
+    height: var(--aic-rail-icon);
+    opacity: 0.65;
 }
 
 .aic-rail__btn:hover .aic-rail__icon {
-    opacity: 0.85;
+    opacity: 0.95;
+}
+
+.aic-rail__btn:hover .aic-rail__name {
+    color: var(--aic-text);
 }
 
 .aic-rail__fallback {
-    font-size: 9px;
+    font-size: var(--aic-fs-xs);
     -unity-font-style: bold;
     color: var(--aic-dim);
     padding: 0;
@@ -193,11 +264,11 @@
 
 .aic-rail__marker {
     position: absolute;
-    left: -3px;
-    top: 6px;
-    width: 2px;
-    height: 14px;
-    border-radius: 1px;
+    left: -4px;
+    top: 25%;
+    width: 3px;
+    height: 50%;
+    border-radius: 2px;
     background-color: var(--aic-accent);
     display: none;
 }
@@ -218,40 +289,30 @@
     opacity: 1;
 }
 
+.aic-rail__btn--on .aic-rail__name {
+    color: var(--aic-text);
+    -unity-font-style: bold;
+}
+
 .aic-rail__btn--on .aic-rail__fallback {
     color: var(--aic-text);
 }
 
-/* Current mode of a cycling button (Sort): small pill in the corner */
+/* Current mode of a cycling button (Sort) in compact mode: small pill in the corner */
 .aic-rail__badge {
     position: absolute;
-    right: -2px;
-    bottom: -1px;
-    min-width: 10px;
-    height: 10px;
+    right: 0;
+    bottom: 1px;
+    min-width: 11px;
+    height: 11px;
     padding: 0 2px;
     margin: 0;
-    font-size: 7px;
+    font-size: 8px;
     -unity-font-style: bold;
     -unity-text-align: middle-center;
     color: var(--aic-badge-text);
     background-color: var(--aic-accent);
-    border-radius: 5px;
-}
-
-.aic-rail--collapsed {
-    width: 12px;
-}
-
-.aic-rail--collapsed .aic-rail__groups {
-    display: none;
-}
-
-.aic-rail--collapsed .aic-rail__toggle {
-    height: 100%;
-    border-bottom-width: 0;
-    justify-content: flex-start;
-    padding-top: 5px;
+    border-radius: 6px;
 }
 
 /* Body: list | splitter | details. Column by default, row when details dock to the right. */
@@ -329,7 +390,7 @@
 }
 
 .aic-pane-title {
-    font-size: 10px;
+    font-size: var(--aic-fs-xs);
     -unity-font-style: bold;
     color: var(--aic-dim);
     letter-spacing: 1px;
@@ -338,7 +399,7 @@
 }
 
 .aic-dock-button {
-    font-size: 10px;
+    font-size: var(--aic-fs-xs);
     height: 16px;
     padding: 0 6px;
     margin: 0;
@@ -363,7 +424,7 @@
 .aic-arrow {
     flex-shrink: 0;
     min-width: 16px;
-    font-size: 11px;
+    font-size: var(--aic-fs-sm);
     color: var(--aic-dim);
     -unity-text-align: middle-left;
     padding: 0 4px;
@@ -450,11 +511,11 @@
 .aic-statusbar__left {
     flex-grow: 1;
     color: var(--aic-dim);
-    font-size: 11px;
+    font-size: var(--aic-fs-sm);
 }
 
 .aic-statusbar__ai {
-    font-size: 11px;
+    font-size: var(--aic-fs-sm);
     color: var(--aic-dim);
     padding: 0 4px;
     border-radius: 3px;
@@ -558,13 +619,13 @@
 }
 
 .aic-chip__label {
-    font-size: 11px;
+    font-size: var(--aic-fs-sm);
     padding: 0;
     margin: 0;
 }
 
 .aic-chip__count {
-    font-size: 10px;
+    font-size: var(--aic-fs-xs);
     color: var(--aic-dim);
     margin-left: 5px;
     padding: 0;
@@ -665,7 +726,7 @@
 .aic-row__time {
     width: 82px;
     flex-shrink: 0;
-    font-size: 11px;
+    font-size: var(--aic-fs-sm);
     color: var(--aic-dim);
     padding: 0;
     margin: 0;
@@ -674,7 +735,7 @@
 .aic-row__system {
     flex-shrink: 0;
     max-width: 120px;
-    font-size: 10px;
+    font-size: var(--aic-fs-xs);
     -unity-font-style: bold;
     padding: 1px 6px;
     margin: 0 6px 0 0;
@@ -710,14 +771,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--aic-dim);
-    font-size: 11px;
+    font-size: var(--aic-fs-sm);
     margin: 0 0 0 8px;
     padding: 0;
 }
 
 .aic-row__badge {
     flex-shrink: 0;
-    font-size: 10px;
+    font-size: var(--aic-fs-xs);
     -unity-font-style: bold;
     color: var(--aic-text);
     background-color: var(--aic-raised);
@@ -730,7 +791,7 @@
     flex-shrink: 0;
     width: 52px;
     -unity-text-align: middle-right;
-    font-size: 10px;
+    font-size: var(--aic-fs-xs);
     color: var(--aic-faint);
     padding: 0;
     margin: 0;
@@ -744,7 +805,7 @@
     flex-grow: 0;
     color: var(--aic-dim);
     -unity-font-style: italic;
-    font-size: 11px;
+    font-size: var(--aic-fs-sm);
 }
 
 .aic-row__rule {
@@ -768,7 +829,7 @@
 }
 
 .aic-d-kind {
-    font-size: 10px;
+    font-size: var(--aic-fs-xs);
     -unity-font-style: bold;
     padding: 2px 7px;
     margin-right: 6px;
@@ -782,7 +843,7 @@
 .aic-d-kind--marker { background-color: var(--aic-faint); }
 
 .aic-d-meta {
-    font-size: 11px;
+    font-size: var(--aic-fs-sm);
     color: var(--aic-dim);
     margin-right: 10px;
     padding: 0;
@@ -798,12 +859,12 @@
     border-width: 0;
     padding: 0;
     color: var(--aic-text);
-    font-size: 13px;
+    font-size: var(--aic-fs-lg);
     white-space: normal;
 }
 
 .aic-d-section {
-    font-size: 10px;
+    font-size: var(--aic-fs-xs);
     -unity-font-style: bold;
     color: var(--aic-dim);
     margin: 8px 0 4px 0;
@@ -863,7 +924,7 @@
 .aic-frame__file {
     margin-left: 8px;
     color: var(--aic-accent);
-    font-size: 11px;
+    font-size: var(--aic-fs-sm);
     padding: 0;
     flex-shrink: 0;
 }
@@ -893,7 +954,7 @@
 
 .aic-frame-toggle {
     color: var(--aic-dim);
-    font-size: 11px;
+    font-size: var(--aic-fs-sm);
     padding: 2px 6px;
 }
 
@@ -911,7 +972,7 @@
 }
 
 .aic-source__title {
-    font-size: 11px;
+    font-size: var(--aic-fs-sm);
     color: var(--aic-dim);
     padding: 0 10px 4px 10px;
 }
@@ -946,4 +1007,207 @@
     justify-content: center;
     color: var(--aic-dim);
     -unity-text-align: middle-center;
+}
+
+/* ---------- Text size ----------
+   Defaults (step 2) live on .aic-root; the aic--fs-N class set by A− / A+ overrides them. */
+.aic-root {
+    --aic-fs: 13px;
+    --aic-fs-sm: 12px;
+    --aic-fs-xs: 10px;
+    --aic-fs-lg: 15px;
+    --aic-rail-btn: 32px;
+    --aic-rail-icon: 18px;
+    --aic-rail-w: 40px;
+    --aic-rail-w-exp: 172px;
+    --aic-chip-h: 22px;
+}
+
+.aic--fs-0 { --aic-fs: 11px; --aic-fs-sm: 10px; --aic-fs-xs: 9px;  --aic-fs-lg: 12px; --aic-rail-btn: 28px; --aic-rail-icon: 16px; --aic-rail-w: 36px; --aic-rail-w-exp: 150px; --aic-chip-h: 20px; }
+.aic--fs-1 { --aic-fs: 12px; --aic-fs-sm: 11px; --aic-fs-xs: 10px; --aic-fs-lg: 13px; --aic-rail-btn: 30px; --aic-rail-icon: 17px; --aic-rail-w: 38px; --aic-rail-w-exp: 160px; --aic-chip-h: 21px; }
+.aic--fs-2 { --aic-fs: 13px; --aic-fs-sm: 12px; --aic-fs-xs: 10px; --aic-fs-lg: 15px; --aic-rail-btn: 32px; --aic-rail-icon: 18px; --aic-rail-w: 40px; --aic-rail-w-exp: 172px; --aic-chip-h: 22px; }
+.aic--fs-3 { --aic-fs: 14px; --aic-fs-sm: 12px; --aic-fs-xs: 11px; --aic-fs-lg: 16px; --aic-rail-btn: 34px; --aic-rail-icon: 20px; --aic-rail-w: 42px; --aic-rail-w-exp: 184px; --aic-chip-h: 24px; }
+.aic--fs-4 { --aic-fs: 16px; --aic-fs-sm: 14px; --aic-fs-xs: 12px; --aic-fs-lg: 18px; --aic-rail-btn: 38px; --aic-rail-icon: 22px; --aic-rail-w: 46px; --aic-rail-w-exp: 204px; --aic-chip-h: 26px; }
+.aic--fs-5 { --aic-fs: 18px; --aic-fs-sm: 15px; --aic-fs-xs: 13px; --aic-fs-lg: 20px; --aic-rail-btn: 42px; --aic-rail-icon: 24px; --aic-rail-w: 50px; --aic-rail-w-exp: 224px; --aic-chip-h: 28px; }
+
+/* Text that used the editor default now follows the text size too */
+.aic-row__msg,
+.aic-d-kv__key,
+.aic-d-kv__value,
+.aic-frame__method,
+.aic-source__code,
+.aic-source__no,
+.aic-banner__title,
+.aic-banner__text,
+.aic-empty,
+.aic-d-actions > Button,
+.aic-tag-editor__label {
+    font-size: var(--aic-fs);
+}
+
+.aic-chip {
+    height: var(--aic-chip-h);
+    border-radius: 11px;
+}
+
+/* ---------- Tags bar ---------- */
+.aic-tags {
+    flex-shrink: 0;
+    border-bottom-width: 1px;
+    border-color: var(--aic-border);
+    background-color: var(--aic-panel);
+}
+
+.aic-tags > .aic-systems {
+    border-bottom-width: 0;
+    align-items: center;
+}
+
+.aic-tags__title {
+    font-size: var(--aic-fs-xs);
+    -unity-font-style: bold;
+    letter-spacing: 1px;
+    color: var(--aic-faint);
+    padding: 0;
+    margin: 0 8px 2px 2px;
+    flex-shrink: 0;
+}
+
+.aic-tags__controls {
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: 6px;
+    margin-bottom: 2px;
+}
+
+/* Any / All segmented switch */
+.aic-seg {
+    flex-direction: row;
+    border-width: 1px;
+    border-color: var(--aic-border);
+    border-radius: 5px;
+    margin-right: 8px;
+    overflow: hidden;
+}
+
+.aic-seg__btn {
+    font-size: var(--aic-fs-xs);
+    color: var(--aic-dim);
+    padding: 2px 9px;
+    margin: 0;
+}
+
+.aic-seg__btn:hover {
+    background-color: var(--aic-hover);
+}
+
+.aic-seg__btn--on {
+    color: var(--aic-text);
+    -unity-font-style: bold;
+    background-color: var(--aic-rail-on);
+}
+
+.aic-link {
+    font-size: var(--aic-fs-sm);
+    color: var(--aic-accent);
+    padding: 2px 7px;
+    margin: 0 0 0 2px;
+    border-radius: 4px;
+}
+
+.aic-link:hover {
+    background-color: var(--aic-hover);
+}
+
+.aic-link--on {
+    background-color: var(--aic-rail-on);
+    color: var(--aic-text);
+}
+
+/* Selected chip: tinted with the tag's own colour (set inline) */
+.aic-chip--selected .aic-chip__label {
+    -unity-font-style: bold;
+    color: var(--aic-text);
+}
+
+/* ---------- Tag editor ---------- */
+.aic-tag-editor {
+    padding: 8px 10px 10px 10px;
+    border-top-width: 1px;
+    border-color: var(--aic-border);
+    background-color: var(--aic-raised);
+}
+
+.aic-tag-editor__add {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.aic-tag-editor__hint {
+    font-size: var(--aic-fs-sm);
+    color: var(--aic-dim);
+    margin-right: 6px;
+    padding: 0;
+}
+
+.aic-tag-editor__name-field {
+    width: 180px;
+    margin: 0 6px 0 0;
+}
+
+.aic-tag-editor__color {
+    width: 56px;
+    margin: 0 8px 0 0;
+    flex-shrink: 0;
+}
+
+.aic-tag-editor__rows {
+    flex-direction: row;
+    flex-wrap: wrap;
+}
+
+.aic-tag-editor__row {
+    flex-direction: row;
+    align-items: center;
+    width: 300px;
+    margin: 2px 14px 2px 0;
+}
+
+.aic-tag-editor__label {
+    width: 120px;
+    padding: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.aic-tag-editor__count {
+    width: 64px;
+    font-size: var(--aic-fs-xs);
+    color: var(--aic-dim);
+    padding: 0;
+    margin: 0;
+}
+
+/* ---------- Row tags ---------- */
+.aic-row__more {
+    flex-shrink: 0;
+    font-size: var(--aic-fs-xs);
+    color: var(--aic-dim);
+    padding: 0;
+    margin: 0 6px 0 0;
+}
+
+.aic-d-tag {
+    margin-bottom: 2px;
+}
+
+.aic-tags__hint {
+    font-size: var(--aic-fs-sm);
+    color: var(--aic-faint);
+    -unity-font-style: italic;
+    padding: 2px 0;
+    margin: 0;
 }

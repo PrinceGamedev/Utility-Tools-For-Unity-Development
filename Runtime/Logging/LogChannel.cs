@@ -68,6 +68,12 @@ namespace UtilityTools.Logging
 
         public override string ToString() => Name;
 
+        /// <summary>
+        /// Adds tags to one log call: <c>Spawn.Tagged("UI", "Boss").Info("Opened")</c>. Tags appear as
+        /// [UI][Boss] in the Console, as filter chips in the AI Console and as "tags" in the AI files.
+        /// </summary>
+        public TaggedLog Tagged(params string[] tags) => new TaggedLog(this, tags);
+
         // ---------- Verbose ----------
         [HideInCallstack, Conditional(Editor), Conditional(DevBuild), Conditional(ForceLogs)]
         public void Verbose(string message, params (string key, object value)[] fields)

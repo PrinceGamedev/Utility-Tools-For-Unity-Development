@@ -32,7 +32,8 @@ namespace UtilityTools.AIConsole
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         // "[Network] message" — tag must start with a letter so "[12:00]" isn't taken as a tag.
-        private static readonly Regex LeadingTag = new Regex(@"^\[(?<tag>[A-Za-z][\w .-]{0,31})\]\s*", RegexOptions.Compiled);
+        // \G (not ^) so tags can be read one after another from a start offset: "[UI][Net] text".
+        private static readonly Regex LeadingTag = new Regex(@"\G\[(?<tag>[A-Za-z][\w .-]{0,31})\]\s*", RegexOptions.Compiled);
 
         private static readonly Regex Numbers = new Regex(@"0x[0-9a-fA-F]+|[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}|\d+(\.\d+)?", RegexOptions.Compiled);
 
@@ -173,17 +174,40 @@ namespace UtilityTools.AIConsole
         /// <summary>Splits a leading "[Tag] " off a plain Debug.Log message.</summary>
         public static bool TrySplitTag(string message, out string tag, out string rest)
         {
-            var m = string.IsNullOrEmpty(message) ? Match.Empty : LeadingTag.Match(message);
-            if (m.Success)
+            bool found = TrySplitTags(message, out var tags, out _);
+            tag = found ? tags[0] : null;
+            if (found)
             {
-                tag = m.Groups["tag"].Value;
+                var m = LeadingTag.Match(message);
                 rest = message.Substring(m.Length);
-                return true;
+            }
+            else
+            {
+                rest = message;
             }
 
-            tag = null;
+            return found;
+        }
+
+        /// <summary>Splits every leading tag off a message: "[UI][Net] text" or "[UI] [Net] text" → UI, Net.</summary>
+        public static bool TrySplitTags(string message, out List<string> tags, out string rest)
+        {
+            tags = null;
             rest = message;
-            return false;
+            if (string.IsNullOrEmpty(message)) return false;
+
+            int pos = 0;
+            while (pos < message.Length)
+            {
+                var m = LeadingTag.Match(message, pos);
+                if (!m.Success || m.Index != pos) break;
+                (tags ??= new List<string>()).Add(m.Groups["tag"].Value);
+                pos += m.Length;
+            }
+
+            if (tags == null) return false;
+            rest = message.Substring(pos);
+            return true;
         }
 
         /// <summary>

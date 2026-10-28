@@ -47,6 +47,10 @@ namespace UtilityTools.AIConsole
             DrawSystems(project, user, out bool userChanged);
             projectChanged |= EditorGUI.EndChangeCheck();
 
+            EditorGUI.BeginChangeCheck();
+            DrawTags(project);
+            projectChanged |= EditorGUI.EndChangeCheck();
+
             DrawBuild();
 
             EditorGUI.BeginChangeCheck();
@@ -150,6 +154,50 @@ namespace UtilityTools.AIConsole
             if (GUILayout.Button(new GUIContent("Scan project for systems",
                     "Finds static LogChannel fields in your assemblies (runs their static initializers)."), GUILayout.Width(200)))
                 ScanForChannels();
+        }
+
+        // ---------- Tags ----------
+        private static string s_NewTag = "";
+        private static Color s_NewTagColor = new Color(0.35f, 0.63f, 1f);
+
+        private static void DrawTags(ConsoleProjectSettings s)
+        {
+            Header("Tags", "Custom tag colours, e.g. UI → blue. Logs get tags from [UI] prefixes, " +
+                           "Tagged(\"UI\") and their system. Also editable in the AI Console (Tags bar → Edit tags).");
+
+            string remove = null;
+            foreach (var tag in s.tags)
+            {
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    ColorUtility.TryParseHtmlString(tag.color, out var c);
+                    var next = EditorGUILayout.ColorField(GUIContent.none, c, false, false, false, GUILayout.Width(70));
+                    if (next != c) tag.color = "#" + ColorUtility.ToHtmlStringRGB(next);
+                    GUILayout.Label(tag.name, GUILayout.Width(150));
+                    if (GUILayout.Button(new GUIContent("×", "Remove this tag colour"), GUILayout.Width(22))) remove = tag.name;
+                }
+            }
+
+            if (remove != null)
+            {
+                s.tags.RemoveAll(t => t.name == remove);
+                GUI.changed = true;
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                s_NewTagColor = EditorGUILayout.ColorField(GUIContent.none, s_NewTagColor, false, false, false, GUILayout.Width(70));
+                s_NewTag = EditorGUILayout.TextField(s_NewTag, GUILayout.Width(150));
+                using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(s_NewTag)))
+                {
+                    if (GUILayout.Button("Add tag", GUILayout.Width(80)))
+                    {
+                        s.SetTagColor(s_NewTag.Trim().Trim('[', ']'), "#" + ColorUtility.ToHtmlStringRGB(s_NewTagColor));
+                        s_NewTag = "";
+                        GUI.changed = true;
+                    }
+                }
+            }
         }
 
         private static void ScanForChannels()

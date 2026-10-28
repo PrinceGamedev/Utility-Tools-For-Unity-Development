@@ -189,6 +189,16 @@ namespace UtilityTools.AIConsole
                 e.message = rec.Exception != null ? StackTraceParser.StripRichText(p.Condition) : rec.Message;
                 if (rec.IsAssert) e.kind = EntryKind.Assert;
 
+                // Tags from Tagged(...) plus any "[UI][Boss]" prefix written into the message itself.
+                var tags = new List<string>(rec.Tags);
+                if (rec.Exception == null && StackTraceParser.TrySplitTags(e.message, out var inline, out var rest))
+                {
+                    tags.AddRange(inline);
+                    e.message = rest;
+                }
+
+                if (tags.Count > 0) e.tags = Distinct(tags, e.system);
+
                 int n = rec.Fields.Count;
                 if (n > 0)
                 {
@@ -203,11 +213,11 @@ namespace UtilityTools.AIConsole
             }
             else
             {
+                // Plain Debug.Log: every leading "[Tag]" becomes a tag ("[UI][Net] text" → UI, Net).
                 string msg = StackTraceParser.StripRichText(p.Condition);
-                if (StackTraceParser.TrySplitTag(msg, out var tag, out var rest))
+                if (StackTraceParser.TrySplitTags(msg, out var tags, out var rest))
                 {
-                    e.system = tag;
-                    e.color = ChannelConfig.ColorFor(tag);
+                    e.tags = Distinct(tags, null);
                     msg = rest;
                 }
 
@@ -220,8 +230,20 @@ namespace UtilityTools.AIConsole
                 e.line = top.Line;
             }
 
-            e.fingerprint = StackTraceParser.Fingerprint(e.kind, e.system, e.message, e.Frames);
+            string tagKey = e.TagCount == 0 ? e.system : e.system + "|" + string.Join(",", e.tags);
+            e.fingerprint = StackTraceParser.Fingerprint(e.kind, tagKey, e.message, e.Frames);
             return e;
+        }
+
+        /// <summary>Case-insensitive de-duplication, dropping the system itself; null when nothing is left.</summary>
+        private static string[] Distinct(List<string> tags, string system)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (system != null) seen.Add(system);
+            var result = new List<string>(tags.Count);
+            foreach (var t in tags)
+                if (!string.IsNullOrWhiteSpace(t) && seen.Add(t.Trim())) result.Add(t.Trim());
+            return result.Count > 0 ? result.ToArray() : null;
         }
 
         private static EntryKind ToKind(LogType type)

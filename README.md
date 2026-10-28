@@ -52,16 +52,26 @@ Unity's Console with one capture pipeline and two readers:
 **Window features**
 - **Search:** `word`, `"phrase"`, `-exclude`, `type:error`, `sys:Network`, `-sys:Audio`, `#812`,
   `fp:<fingerprint>`, `file:Spawner.cs`, `/regex/`.
-- **Filtering:** type toggles with live counts, and system chips (click to filter; right-click →
-  *Mute for me*).
+- **Filtering:** type toggles with live counts (Log / Warning / Error), combined with the tag bar.
+- **Tags:**
+  - **A log can have several tags:** its ULog system, every leading `[Tag]` in the message
+    (`Debug.Log("[UI][Network] …")`), and `Spawn.Tagged("UI", "Boss").Info(…)`.
+  - **Filtering:** click one or more tag chips. With several selected, choose **Any** (the log has at
+    least one of them) or **All** (it has every one).
+  - **Edit tags** opens an inline editor: add tags and pick their colours, e.g. `UI` → blue. The colours
+    are shared with the team in `ProjectSettings/`.
+  - Right-click a system chip → *Mute for me*.
+- **Text size:** the strip's A− / A+ buttons, or `Ctrl/Cmd` + `=` / `-` / `0`. It scales rows,
+  details, chips and the strip.
 - **Toolbar:** Clear, Collapse, search, and the type counts.
-- **Icon strip** on the left. One click per option, no menus; hover any icon for its name and
-  current state. Options that are on show an accent marker.
+- **Side strip** on the left. One click per option, no menus. Options that are on show an accent
+  marker. The chevron switches between **icons + names** and **icons only**; *Hide Strip* collapses it
+  to a thin edge, and clicking the edge brings it back.
   - **View:** Follow, Error Pause, Clear on Play.
   - **Sort:** one button that cycles time → newest → severity → count → system → message
     (Shift+click goes back; the letter shows the current mode).
   - **Panels:** Details, Systems, Timeline, and Dock (cycles Auto → Bottom → Right).
-  - **Display:** engine frames, roomy rows.
+  - **Display:** smaller / larger text, roomy rows, engine frames.
   - **AI:** copy the issues digest, open the AI folder.
   - Settings and About are pinned at the bottom.
   - The chevron at the top hides or shows the strip.
@@ -122,6 +132,7 @@ Systems.Spawn.Exception(e, this);
 Systems.Spawn.Info(() => ExpensiveDump());   // lazy: only built when Spawn is on
 Systems.Spawn.Assert(wave > 0, "Wave must be positive");
 Systems.Spawn.InfoOnce("Only the first time this line runs");
+Systems.Spawn.Tagged("UI", "Boss").Info("Boss bar shown");  // extra tags → [Spawn][UI][Boss]
 ULog.Info("Quick log without a system");
 ```
 

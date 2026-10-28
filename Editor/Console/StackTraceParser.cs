@@ -165,6 +165,10 @@ namespace UtilityTools.AIConsole
             return name.StartsWith(".", StringComparison.Ordinal) ? type + name : type + "." + name;
         }
 
+        /// <summary>"Library/ScriptAssemblies/Game.dll" or "Game.dll" → "Game"; null for none.</summary>
+        internal static string AssemblyKey(string pathOrName) =>
+            string.IsNullOrEmpty(pathOrName) ? null : Path.GetFileNameWithoutExtension(pathOrName);
+
         /// <summary>Project-relative "Assets/…" / "Packages/…" path, or the path as given (null if unknown).</summary>
         internal static string NormalizePath(string file)
         {

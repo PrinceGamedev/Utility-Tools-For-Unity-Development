@@ -41,6 +41,10 @@ All notable changes to this package are documented here. Both the package and ea
 
 ### Fixes
 - AI Console: the tags bar could stay empty after a script reload (cached UI state survived the reload).
+- AI Console: compile warnings disappeared when only some assemblies recompiled (e.g. after editing one
+  package). Each compile message now remembers its assembly; a compile replaces only the messages of
+  the assemblies it rebuilt, like Unity's Console. Messages whose file was deleted are dropped.
+- Agent command `compile all`: a clean rebuild of every assembly.
 
 ### ULog 1.1.0
 - `LogTag` — a tag with its colour, defined once (`public static readonly LogTag UI = new LogTag("UI",

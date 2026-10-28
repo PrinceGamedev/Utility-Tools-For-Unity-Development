@@ -40,6 +40,7 @@ namespace UtilityTools.AIConsole
         public string file;         // compile messages: file; others: first user frame
         public int line;
         public int column;
+        public string assembly;     // compile messages: assembly name without .dll ("Assembly-CSharp")
 
         [NonSerialized] private List<StackFrameInfo> _frames;
 

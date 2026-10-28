@@ -329,6 +329,7 @@ Your batch is finished when commands.txt is gone and results.txt starts with `st
 |---|---|---|
 | `refresh` | imports changed assets, compiles changed scripts | `compiled` / `compile failed: N error(s)` / `imported; no script changes` |
 | `compile` | requests a script compile | as refresh |
+| `compile all` | clean rebuild of every assembly (slow): all compile warnings are reported again | as refresh |
 | `clear` | clears the console like the Clear button (compile errors stay) | `cleared` |
 | `play` / `stop` | enters / leaves Play Mode | `mode=play` / `mode=edit`, or why not |
 | `pause` / `resume` | pauses Play Mode | |

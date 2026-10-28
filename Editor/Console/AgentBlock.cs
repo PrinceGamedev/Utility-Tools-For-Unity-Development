@@ -46,7 +46,7 @@ The Unity Editor mirrors its console and compile state into `{f}/`. Read those f
 - `#812` in the user's words is an entry id in these files.
 
 Drive the Editor: write commands, one per line, to `{f}/commands.txt`. Unity takes the file, runs the commands in order and writes `results.txt` (first line `state=running|done`, then one line per command, then the status line).
-`refresh` (import + compile after edits) · `compile` · `clear` · `play` · `stop` · `wait <seconds>` · `mark <label>` · `show <id>` · `ask <what the user should do>` · `status` · `help`
+`refresh` (import + compile after edits) · `compile` (`compile all` = clean rebuild, every warning) · `clear` · `play` · `stop` · `wait <seconds>` · `mark <label>` · `show <id>` · `ask <what the user should do>` · `status` · `help`
 
 ```
 f={f}; printf 'refresh\n' > $f/commands.txt; for i in $(seq 120); do [ ! -e $f/commands.txt ] && grep -q '^state=done' $f/results.txt && break; sleep 1; done; cat $f/results.txt

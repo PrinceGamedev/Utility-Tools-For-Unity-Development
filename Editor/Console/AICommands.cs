@@ -229,7 +229,11 @@ namespace UtilityTools.AIConsole
                     case "compile":
                         c.baselineTicks = ConsoleStore.LastCompileTicks;
                         Save();
-                        CompilationPipeline.RequestScriptCompilation();
+                        // "compile all": clean rebuild, so every assembly reports its warnings again.
+                        if (string.Equals(c.arg, "all", StringComparison.OrdinalIgnoreCase))
+                            CompilationPipeline.RequestScriptCompilation(RequestScriptCompilationOptions.CleanBuildCache);
+                        else
+                            CompilationPipeline.RequestScriptCompilation();
                         break;
 
                     case "clear":

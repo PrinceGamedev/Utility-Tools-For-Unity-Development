@@ -36,6 +36,7 @@ namespace UtilityTools.AIConsole
 
         private static readonly ConcurrentQueue<Pending> s_Queue = new ConcurrentQueue<Pending>();
         private static readonly List<ConsoleEntry> s_CompileBuffer = new List<ConsoleEntry>();
+        private static readonly HashSet<string> s_RebuiltAssemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         // Main-thread state cached for logs that arrive on other threads.
         private static volatile bool s_Playing;
@@ -155,11 +156,20 @@ namespace UtilityTools.AIConsole
                 file = file,
                 line = line,
                 column = column,
+                assembly = AssemblyOfScript(file),
                 frame = -1
             };
             e.fingerprint = StackTraceParser.Fingerprint(kind, file, e.message, null);
             ConsoleStore.AddCompileIssue(e);
             return true;
+        }
+
+        /// <summary>Assembly a project script compiles into, or null when Unity doesn't know the file.</summary>
+        private static string AssemblyOfScript(string file)
+        {
+            if (string.IsNullOrEmpty(file)) return null;
+            try { return StackTraceParser.AssemblyKey(CompilationPipeline.GetAssemblyNameFromScriptPath(file)); }
+            catch (Exception) { return null; }
         }
 
         private static ConsoleEntry Build(Pending p)
@@ -325,6 +335,7 @@ namespace UtilityTools.AIConsole
         private static void OnCompilationStarted(object _)
         {
             s_CompileBuffer.Clear();
+            s_RebuiltAssemblies.Clear();
             ConsoleStore.ForgetDismissedCompileIssues();
             ConsoleStore.Compile = ConsoleStore.CompileState.Compiling;
             SessionState.SetString(CompileStartKey, DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture));
@@ -333,6 +344,8 @@ namespace UtilityTools.AIConsole
 
         private static void OnAssemblyCompiled(string assembly, CompilerMessage[] messages)
         {
+            string asm = StackTraceParser.AssemblyKey(assembly);
+            if (asm != null) s_RebuiltAssemblies.Add(asm);
             foreach (var m in messages)
             {
                 if (m.type != CompilerMessageType.Error && m.type != CompilerMessageType.Warning) continue;
@@ -346,6 +359,7 @@ namespace UtilityTools.AIConsole
                     file = StackTraceParser.NormalizePath(m.file),
                     line = m.line,
                     column = m.column,
+                    assembly = asm,
                     system = null,
                     frame = -1
                 };
@@ -356,8 +370,11 @@ namespace UtilityTools.AIConsole
 
         private static void OnCompilationFinished(object _)
         {
-            ConsoleStore.SetCompileIssues(s_CompileBuffer);
+            // Only assemblies that were rebuilt report their messages; keep the others' (like Unity).
+            ConsoleStore.UpdateCompileIssues(s_RebuiltAssemblies, s_CompileBuffer, e => AssemblyOfScript(e.file),
+                f => System.IO.File.Exists(f));
             s_CompileBuffer.Clear();
+            s_RebuiltAssemblies.Clear();
 
             int errors = ConsoleStore.CompileErrorCount;
             ConsoleStore.Compile = errors > 0 ? ConsoleStore.CompileState.Failed : ConsoleStore.CompileState.Ok;

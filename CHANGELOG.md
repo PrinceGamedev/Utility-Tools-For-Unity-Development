@@ -3,7 +3,7 @@
 All notable changes to this package are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.3.0] - 2026-10-28
 
 ### Added
 - **ULog logging library** (`UtilityTools.Logging`):
@@ -45,6 +45,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
     silence `Debug.Log`).
   - AI file options (folder, info logs, digest size, rotation) and console history size.
   - "Scan project for systems" finds static `LogChannel` fields.
+- "Logging Demo" sample and EditMode tests for the parser, AI formats, search language and ULog.
+
+### Notes
+- The AI Console window does not replace Unity's built-in Console, which keeps working alongside it.
+- Pause on error is applied on the next editor tick, not synchronously like Unity's Error Pause.
+- Logs written before the editor finishes loading scripts (very early in a domain reload) are only in
+  Unity's Console.
 
 ## [1.2.0] - 2026-10-28
 

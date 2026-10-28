@@ -116,8 +116,8 @@ namespace UtilityTools.AIConsole
         /// <summary>Moves queued logs into the store. Runs every editor tick.</summary>
         internal static void Drain()
         {
+            if (s_Queue.IsEmpty) return; // runs every tick: stay allocation-free when idle
             UpdateMainThreadState();
-            if (s_Queue.IsEmpty) return;
 
             bool pause = false;
             while (s_Queue.TryDequeue(out var p))

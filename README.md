@@ -90,12 +90,12 @@ All commands live under **`Tools → Utility Tools`** (and **`Assets → Utility
 
 | Tool | Shortcut | Notes |
 |------|----------|-------|
-| Scene Switcher UI | `Ctrl/Cmd+Q` next · `Ctrl/Cmd+W` prev | Overlay of enabled Build scenes; ↑/↓, Enter, Esc, release-to-open |
+| Scene Switcher UI | `Ctrl+Q` next · `Ctrl+W` prev | Overlay of enabled Build scenes; ↑/↓, Enter, Esc, release-to-open. Physical `Ctrl` on macOS too (`Cmd+Q` would quit Unity); `Option` on macOS editors older than 2022.1 |
 | Toggle Inspector Lock | `Ctrl+E` | Locks focused inspector, or all if none focused |
 | Open Package Manager | `Shift+X` | |
 | Open In Explorer / Finder | `Ctrl+Shift+E` | Selected asset's folder, or project root |
 | Open Project Settings | `Ctrl+Shift+O` | |
-| Open Player Settings | `Ctrl+Shift+P` | Deep-links to the Player tab |
+| Open Player Settings | `Ctrl+Shift+Alt+P` | Deep-links to the Player tab (`Ctrl+Shift+P` is Unity's Pause) |
 | Clear All PlayerPrefs | `Ctrl+Shift+D` | Confirmation required |
 | Play From Bootstrap | `F5` | Enters Play Mode from the first enabled Build scene; restores normal play on exit |
 | Force Recompile | `Ctrl+Shift+R` | |
@@ -119,10 +119,11 @@ In Unity: **Window → Package Manager → `+` → Add package from git URL…**
 https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git
 ```
 
-To pin a specific version, append a release tag:
+To pin a specific version, append a release tag (see the repo's
+[Tags](https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development/tags)) or a commit hash:
 
 ```
-https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.1.0
+https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.1.1
 ```
 
 ### Option B — Manual

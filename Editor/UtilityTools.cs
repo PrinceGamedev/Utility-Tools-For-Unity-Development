@@ -66,11 +66,23 @@ namespace UtilityTools
         [MenuItem("Tools/Utility Tools/Scene Switcher UI")]
         static void ShowFromMenu() => ShowOrCreate(0, false);
 
-        // Shortcuts (Ctrl/Cmd + Q/W) – only update; do NOT recreate window
-        [Shortcut("Scenes/Show & Next (Ctrl+Q)", KeyCode.Q, ShortcutModifiers.Action)]
+        // The switcher binds the physical Ctrl key on every platform: on macOS, Action resolves to
+        // Cmd and Cmd+Q quits Unity. ShortcutModifiers.Control only exists from 2022.1, so older
+        // macOS editors fall back to Option (Alt).
+#if UNITY_EDITOR_OSX && UNITY_2022_1_OR_NEWER
+        const ShortcutModifiers SWITCH_MOD = ShortcutModifiers.Control;
+#elif UNITY_EDITOR_OSX
+        const ShortcutModifiers SWITCH_MOD = ShortcutModifiers.Alt;
+#else
+        const ShortcutModifiers SWITCH_MOD = ShortcutModifiers.Action; // = Ctrl on Windows/Linux
+#endif
+
+        // Shortcuts (Ctrl + Q/W) – only update; do NOT recreate window.
+        // IDs are unchanged so existing user rebinds keep working.
+        [Shortcut("Scenes/Show & Next (Ctrl+Q)", KeyCode.Q, SWITCH_MOD)]
         static void ShortcutNext() => ShowOrCreate(+1, true);
 
-        [Shortcut("Scenes/Show & Prev (Ctrl+W)", KeyCode.W, ShortcutModifiers.Action)]
+        [Shortcut("Scenes/Show & Prev (Ctrl+W)", KeyCode.W, SWITCH_MOD)]
         static void ShortcutPrev() => ShowOrCreate(-1, true);
 
         void OnEnable()
@@ -104,8 +116,8 @@ namespace UtilityTools
 
         void OnGUI()
         {
-            // If we opened via shortcut: releasing Ctrl/Cmd should open highlighted scene
-            if (closeOnActionKeyUp && Event.current.type == EventType.KeyUp && IsCtrlOrCmdKeyUp(Event.current))
+            // If we opened via shortcut: releasing the switcher modifier should open highlighted scene
+            if (closeOnActionKeyUp && Event.current.type == EventType.KeyUp && IsSwitchModifierKeyUp(Event.current))
             {
                 if (TryOpenHighlighted()) Close();
                 GUIUtility.ExitGUI();
@@ -118,7 +130,8 @@ namespace UtilityTools
             using (new GUILayout.HorizontalScope())
             {
                 GUILayout.Space(PADDING);
-                GUILayout.Label("Enabled Scenes (Ctrl/Cmd+Q next • Ctrl/Cmd+W prev • Enter open • Esc cancel)", EditorStyles.boldLabel);
+                GUILayout.Label("Enabled Scenes (" + SWITCH_KEY_NAME + "+Q next • " + SWITCH_KEY_NAME +
+                                "+W prev • Enter open • Esc cancel)", EditorStyles.boldLabel);
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button("Build Settings", GUILayout.Height(20)))
                     EditorWindow.GetWindow(Type.GetType("UnityEditor.BuildPlayerWindow,UnityEditor"));
@@ -153,10 +166,16 @@ namespace UtilityTools
             GUILayout.Space(PADDING);
         }
 
-        static bool IsCtrlOrCmdKeyUp(Event e)
+#if UNITY_EDITOR_OSX && !UNITY_2022_1_OR_NEWER
+        const string SWITCH_KEY_NAME = "Option";
+#else
+        const string SWITCH_KEY_NAME = "Ctrl";
+#endif
+
+        static bool IsSwitchModifierKeyUp(Event e)
         {
-#if UNITY_EDITOR_OSX
-        return e.keyCode == KeyCode.LeftCommand || e.keyCode == KeyCode.RightCommand;
+#if UNITY_EDITOR_OSX && !UNITY_2022_1_OR_NEWER
+            return e.keyCode == KeyCode.LeftAlt || e.keyCode == KeyCode.RightAlt;
 #else
             return e.keyCode == KeyCode.LeftControl || e.keyCode == KeyCode.RightControl;
 #endif
@@ -414,7 +433,8 @@ namespace UtilityTools
     #region Open Player Settings
     public static class OpenPlayerSettings
     {
-        [MenuItem("Tools/Utility Tools/Open Player Settings %#p")] // Ctrl+Shift+P
+        // Ctrl+Shift+Alt+P — Ctrl+Shift+P is Unity's built-in Pause shortcut.
+        [MenuItem("Tools/Utility Tools/Open Player Settings %#&p")]
         private static void Open() => SettingsService.OpenProjectSettings("Project/Player");
     }
     #endregion

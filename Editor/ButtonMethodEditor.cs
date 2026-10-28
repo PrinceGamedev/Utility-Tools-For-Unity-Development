@@ -12,6 +12,7 @@ namespace UtilityTools
 
 
     [CustomEditor(typeof(MonoBehaviour), true)]
+    [CanEditMultipleObjects] // applies to every MonoBehaviour, so it must not block multi-selection
     public class ButtonMethodEditor : Editor
     {
         // --------- Per-type metadata cache ---------
@@ -148,7 +149,7 @@ namespace UtilityTools
                 if (ps.Length == 0)
                 {
                     if (GUILayout.Button(content, GUILayout.Height(22)) && ConfirmRun(attr, labelStr))
-                        InvokeButton(mb, meta, null);
+                        InvokeOnTargets(mb, meta, null);
                 }
                 else
                 {
@@ -172,7 +173,7 @@ namespace UtilityTools
                         if (GUI.Button(runRect, "Run") && ConfirmRun(attr, labelStr))
                         {
                             var args = BuildArgs(mb, meta);
-                            if (args != null) InvokeButton(mb, meta, args);
+                            if (args != null) InvokeOnTargets(mb, meta, args);
                         }
                     }
 
@@ -306,7 +307,7 @@ namespace UtilityTools
                 if (!Cache[mb.GetInstanceID()].TryGetValue(pKey, out var current) || current == null)
                     current = ps[i].HasDefaultValue ? ps[i].DefaultValue : GetDefaultForType(ps[i].ParameterType);
 
-                object newVal = DrawAny(mb, ps[i].ParameterType, meta.ParamLabels[i], current, 0);
+                object newVal = DrawAny(pKey, ps[i].ParameterType, meta.ParamLabels[i], current, 0);
                 Cache[mb.GetInstanceID()][pKey] = newVal;
             }
         }
@@ -363,6 +364,21 @@ namespace UtilityTools
         }
 
         // --------- Invocation (return values + coroutines + static) ---------
+        // With a multi-selection, instance methods run on every selected object (using the
+        // primary target's param values); static methods run once.
+        private void InvokeOnTargets(MonoBehaviour mb, MethodMeta meta, object[] args)
+        {
+            if (meta.IsStatic || targets.Length <= 1)
+            {
+                InvokeButton(mb, meta, args);
+                return;
+            }
+
+            foreach (var t in targets)
+                if (t is MonoBehaviour other && meta.Method.DeclaringType.IsInstanceOfType(other))
+                    InvokeButton(other, meta, args);
+        }
+
         private void InvokeButton(MonoBehaviour mb, MethodMeta meta, object[] args)
         {
             var method = meta.Method;
@@ -398,7 +414,8 @@ namespace UtilityTools
         }
 
         // --------- Big drawer (parameters) ---------
-        private object DrawAny(UnityEngine.Object context, Type t, GUIContent label, object current, int depth)
+        // scope = unique key for this value (object|method|param[|field...]); keys fold/list UI state.
+        private object DrawAny(string scope, Type t, GUIContent label, object current, int depth)
         {
             if (depth > 6)
             {
@@ -486,7 +503,7 @@ namespace UtilityTools
                 for (int i = 0; i < arr.Length; i++)
                     listBoxed.Add(arr.GetValue(i) ?? GetDefaultForType(elemType));
 
-                DrawReorderableListInline(context, label.text, elemType, listBoxed);
+                DrawReorderableListInline(scope, label.text, elemType, listBoxed);
 
                 var resized = Array.CreateInstance(elemType, listBoxed.Count);
                 for (int i = 0; i < listBoxed.Count; i++) resized.SetValue(listBoxed[i], i);
@@ -497,7 +514,7 @@ namespace UtilityTools
             {
                 Type elemType = t.GetGenericArguments()[0];
                 var list = current as IList ?? (IList)Activator.CreateInstance(t);
-                DrawReorderableListInline(context, label.text, elemType, list);
+                DrawReorderableListInline(scope, label.text, elemType, list);
                 return list;
             }
 
@@ -519,7 +536,7 @@ namespace UtilityTools
             if (IsSerializableByUnity(t))
             {
                 if (current == null) current = Activator.CreateInstance(t);
-                string fk = context.GetInstanceID() + "|CLASS|" + t.FullName + "|" + label.text;
+                string fk = scope + "|CLASS|" + t.FullName;
                 bool open = GetFold(fk, false);
                 open = EditorGUILayout.Foldout(open, $"{label.text} ({t.Name})", true);
                 SetFold(fk, open);
@@ -531,7 +548,7 @@ namespace UtilityTools
                         foreach (var f in GetUnitySerializableFields(t))
                         {
                             object fieldVal = f.GetValue(current);
-                            object newVal = DrawAny(context, f.FieldType,
+                            object newVal = DrawAny(scope + "|" + f.Name, f.FieldType,
                                 GetLabel(ObjectNames.NicifyVariableName(f.Name)), fieldVal, depth + 1);
                             if (!Equals(newVal, fieldVal)) f.SetValue(current, newVal);
                         }
@@ -548,13 +565,16 @@ namespace UtilityTools
         }
 
         // --------- NEW: Unity-like INLINE list rows ---------
-     private void DrawReorderableListInline(UnityEngine.Object context, string label, Type elemType, IList list)
+     private void DrawReorderableListInline(string scope, string label, Type elemType, IList list)
 {
-    string key = context.GetInstanceID() + "|RL_INLINE|" + label + "|" + elemType.FullName;
+    string key = scope + "|RL_INLINE|" + elemType.FullName;
 
     if (!RLCache.TryGetValue(key, out var rl))
     {
         rl = new ReorderableList(list, elemType, true, true, true, true);
+
+        // NOTE: callbacks must read rl.list, not `list` — the cached ReorderableList outlives this
+        // call, and array params hand in a fresh IList every frame.
 
         rl.drawHeaderCallback = rect =>
         {
@@ -578,18 +598,19 @@ namespace UtilityTools
 
             EditorGUI.LabelField(sizeLabelRect, "Size", EditorStyles.miniLabel);
 
+            var cur = rl.list;
             EditorGUI.BeginChangeCheck();
-            int newSize = Mathf.Max(0, EditorGUI.IntField(sizeFieldRect, list.Count));
+            int newSize = Mathf.Max(0, EditorGUI.IntField(sizeFieldRect, cur.Count));
             if (EditorGUI.EndChangeCheck())
             {
-                while (list.Count < newSize) list.Add(GetDefaultForType(elemType));
-                while (list.Count > newSize) list.RemoveAt(list.Count - 1);
-                rl.index = Mathf.Clamp(rl.index, 0, list.Count - 1);
+                while (cur.Count < newSize) cur.Add(GetDefaultForType(elemType));
+                while (cur.Count > newSize) cur.RemoveAt(cur.Count - 1);
+                rl.index = Mathf.Clamp(rl.index, 0, cur.Count - 1);
             }
         };
 
-        rl.onAddCallback    = l => list.Add(GetDefaultForType(elemType));
-        rl.onRemoveCallback = l => { if (l.index >= 0 && l.index < list.Count) list.RemoveAt(l.index); };
+        rl.onAddCallback    = l => l.list.Add(GetDefaultForType(elemType));
+        rl.onRemoveCallback = l => { if (l.index >= 0 && l.index < l.list.Count) l.list.RemoveAt(l.index); };
 
         rl.drawElementCallback = (rect, index, active, focused) =>
         {
@@ -603,9 +624,9 @@ namespace UtilityTools
             // field (right)
             var fieldRect = new Rect(rect.x + EditorGUIUtility.labelWidth, rect.y, rect.width - EditorGUIUtility.labelWidth, rect.height);
 
-            object val = list[index];
+            object val = rl.list[index];
             if (TryDrawInlineField(fieldRect, elemType, val, out var newVal))
-                list[index] = newVal;
+                rl.list[index] = newVal;
             else
                 EditorGUI.LabelField(fieldRect, SummarizeValue(val, elemType));
         };

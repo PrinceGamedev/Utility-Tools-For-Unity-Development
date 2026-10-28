@@ -3,6 +3,19 @@
 All notable changes to this package are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **ULog logging library** (`UtilityTools.Logging`):
+  - `LogChannel` — one per game system, with its own colour, `Enabled` switch and `MinLevel`.
+  - `Verbose` / `Info` / `Warning` / `Error` / `Exception` / `Assert`, `InfoOnce` / `WarningOnce`,
+    lazy `Func<string>` overloads, structured fields: `Spawn.Info("Spawned", ("count", 3))`.
+  - Verbose / Info / Warning / Assert calls are compiled out of release builds (arguments included).
+    `UTILITYTOOLS_LOGS` keeps them; `UTILITYTOOLS_STRIP_ERRORS` also drops errors;
+    `UTILITYTOOLS_SILENCE_UNITY_LOGS` filters plain `Debug.Log` / `LogWarning` in release builds.
+  - Extension points: `ULog.Logged` event (custom outputs) and `ULog.Formatter` (line format).
+  - Logging methods are hidden from stack traces (Unity 2022.2+), so double-click opens the caller.
+
 ## [1.2.0] - 2026-10-28
 
 ### Added

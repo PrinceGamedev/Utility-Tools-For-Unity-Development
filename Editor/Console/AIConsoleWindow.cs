@@ -70,9 +70,12 @@ namespace UtilityTools.AIConsole
         private SearchQuery _query = new SearchQuery("");
         private bool _dirty = true;
         private int _selectedId = -1;
-        private int _detailsId = -1;
-        private int _detailsCount = -1;
-        private string _systemsSignature = "";
+        // Caches of what the UI currently shows. [NonSerialized]: Unity carries private fields of an
+        // EditorWindow across script reloads, but the UI is rebuilt from scratch — a stale signature would
+        // make it skip drawing (e.g. an empty tags bar after a compile).
+        [NonSerialized] private int _detailsId = -1;
+        [NonSerialized] private int _detailsCount = -1;
+        [NonSerialized] private string _systemsSignature = "";
 
         // ---------- UI ----------
         private ToolbarSearchField _search;
@@ -82,8 +85,8 @@ namespace UtilityTools.AIConsole
         private Label _agentTitle, _agentText;
         private TextField _agentNote;
         private Button _agentPrimary, _agentSecondary, _agentTertiary;
-        private bool _agentSetupNeeded;
-        private bool _agentAsking;
+        [NonSerialized] private bool _agentSetupNeeded;
+        [NonSerialized] private bool _agentAsking;
         private Label _bannerTitle, _bannerText;
         private VisualElement _systems;
         private VisualElement _timeline;
@@ -1258,7 +1261,7 @@ namespace UtilityTools.AIConsole
 
         // Chip font size per text size step (matches --aic-fs-sm in the USS).
         private static readonly int[] ChipFontSizes = { 10, 11, 12, 12, 14, 15 };
-        private float _tagColumnWidth;
+        [NonSerialized] private float _tagColumnWidth;
 
         /// <summary>
         /// Width of the tag column: wide enough for the widest tag set among the rows shown (up to
@@ -1810,6 +1813,11 @@ namespace UtilityTools.AIConsole
         }
 
         // ---------- Details ----------
+        // Layout, top to bottom: meta line (kind · code · #id · time · mode/scene · frame), the message as a
+        // title (+ the rest of a multi-line message), tags, action buttons, then cards: location, fields,
+        // context, stack trace, source. Everything lives in _detailsBody so it gets the pane padding.
+        private VisualElement _detailsBody;
+
         private void RefreshDetails(bool force)
         {
             if (_selectedId < 0) return;
@@ -1823,6 +1831,9 @@ namespace UtilityTools.AIConsole
         {
             if (_details == null) return;
             _details.Clear();
+            _detailsBody = new VisualElement();
+            _detailsBody.AddToClassList("aic-d-body");
+            _details.Add(_detailsBody);
             _detailsId = e?.id ?? -1;
 
             if (e == null)
@@ -1831,109 +1842,205 @@ namespace UtilityTools.AIConsole
                                       "Double-click a row to open its code · right-click for more.");
                 empty.AddToClassList("aic-empty");
                 empty.style.marginTop = 20;
-                _details.Add(empty);
+                _detailsBody.Add(empty);
                 return;
             }
 
             var group = ConsoleStore.GroupOf(e);
             _detailsCount = group?.Count ?? 1;
 
-            // Header
-            var header = new VisualElement();
-            header.AddToClassList("aic-d-header");
-            var kind = new Label(e.KindName.ToUpperInvariant());
+            // Meta line
+            var meta = new VisualElement();
+            meta.AddToClassList("aic-d-meta-row");
+            var kind = new Label(KindTitle(e));
             kind.AddToClassList("aic-d-kind");
             kind.AddToClassList(e.IsError ? "aic-d-kind--error" : e.IsWarning ? "aic-d-kind--warning" :
                 e.kind == EntryKind.Marker ? "aic-d-kind--marker" : "aic-d-kind--log");
-            header.Add(kind);
+            meta.Add(kind);
 
+            string code = e.IsCompile ? StackTraceParser.CompilerCode(e.message) : null;
+            if (code != null)
+            {
+                var codeChip = new Label(code) { tooltip = "Compiler message code — click to look it up" };
+                codeChip.AddToClassList("aic-d-code");
+                string url = "https://learn.microsoft.com/dotnet/csharp/misc/" + code.ToLowerInvariant();
+                codeChip.AddManipulator(new Clickable(() => Application.OpenURL(url)));
+                meta.Add(codeChip);
+            }
+
+            var local = new DateTime(e.ticks, DateTimeKind.Utc).ToLocalTime();
+            var parts = new List<string> { "#" + e.id };
+            parts.Add(local.Date == DateTime.Today
+                ? local.ToString("HH:mm:ss.fff", CultureInfo.InvariantCulture)
+                : local.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture));
+            if (!e.IsCompile && e.kind != EntryKind.Marker)
+                parts.Add((e.play ? "Play" : "Edit") + (string.IsNullOrEmpty(e.scene) ? "" : " · " + e.scene));
+            if (e.frame >= 0) parts.Add("frame " + e.frame);
+            if (e.thread != 0 && ULog.MainThreadId > 0 && e.thread != ULog.MainThreadId) parts.Add("thread " + e.thread);
+            var metaText = new Label(string.Join("   ·   ", parts))
+            {
+                tooltip = local.ToString("dddd yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)
+            };
+            metaText.AddToClassList("aic-d-meta");
+            meta.Add(metaText);
+
+            if (group != null && group.Count > 1)
+            {
+                var repeats = new Label($"×{group.Count}") { tooltip = $"Logged {group.Count} times (first #{group.FirstId})" };
+                repeats.AddToClassList("aic-row__badge");
+                meta.Add(repeats);
+            }
+
+            _detailsBody.Add(meta);
+
+            // Message: first line as the title, the rest below. Both selectable.
+            SplitMessage(e, out string title, out string rest);
+            var titleField = new TextField { multiline = true, isReadOnly = true, value = title };
+            titleField.AddToClassList("aic-d-title");
+            titleField.EnableInClassList("aic-d-title--error", e.IsError);
+            _detailsBody.Add(titleField);
+            if (rest.Length > 0)
+            {
+                var restField = new TextField { multiline = true, isReadOnly = true, value = rest };
+                restField.AddToClassList("aic-d-text");
+                _detailsBody.Add(restField);
+            }
+
+            // Tags
+            bool anyTag = false;
+            var tags = new VisualElement();
+            tags.AddToClassList("aic-d-tags");
             foreach (var tag in e.AllTags)
             {
+                anyTag = true;
                 string t = tag;
-                var chip = new Label(t) { tooltip = "Click to filter by " + t };
+                var chip = new Label(t) { tooltip = "Click to show only " + t + " logs" };
                 chip.AddToClassList("aic-row__system");
-                chip.AddToClassList("aic-d-tag");
                 var c = ParseColor(TagColor(e, t));
                 chip.style.color = c;
                 chip.style.backgroundColor = new Color(c.r, c.g, c.b, 0.16f);
                 chip.AddManipulator(new Clickable(() =>
                 {
+                    _systemFilter.Clear();
                     _systemFilter.Add(t);
                     SaveTagFilter();
                 }));
-                header.Add(chip);
+                tags.Add(chip);
             }
 
-            Meta(header, "#" + e.id);
-            Meta(header, new DateTime(e.ticks, DateTimeKind.Utc).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture));
-            if (e.frame >= 0) Meta(header, "frame " + e.frame);
-            if (!e.IsCompile && e.kind != EntryKind.Marker)
-                Meta(header, (e.play ? "Play" : "Edit") + (string.IsNullOrEmpty(e.scene) ? "" : " · " + e.scene));
-            if (e.thread != 0 && ULog.MainThreadId > 0 && e.thread != ULog.MainThreadId) Meta(header, "thread " + e.thread);
-            if (group != null && group.Count > 1) Meta(header, $"×{group.Count} (first #{group.FirstId})");
-            _details.Add(header);
+            if (anyTag) _detailsBody.Add(tags);
 
-            // Message (selectable)
-            var message = new TextField { multiline = true, isReadOnly = true, value = e.message ?? "" };
-            message.AddToClassList("aic-d-message");
-            _details.Add(message);
+            // Actions, right under the message so they never scroll away.
+            var actions = new VisualElement();
+            actions.AddToClassList("aic-d-actions");
+            if (TryGetSourceLocation(e, out string srcFile, out int srcLine))
+            {
+                var open = DetailButton("Open " + Path.GetFileName(srcFile) + ":" + srcLine, "Open in the code editor", () => OpenBestSource(e));
+                open.AddToClassList("aic-d-btn--primary");
+                actions.Add(open);
+            }
+
+            if (e.contextId != 0) actions.Add(DetailButton("Select object", "Select the object that logged this", () => PingContext(e)));
+            actions.Add(DetailButton("Copy", "Copy as plain text", () => EditorGUIUtility.systemCopyBuffer = PlainText(e)));
+            actions.Add(DetailButton("Copy for AI", "Copy a compact Markdown summary for an AI chat", () => EditorGUIUtility.systemCopyBuffer = AIFormat.EntryMarkdown(e)));
+            actions.Add(DetailButton("JSON", "Copy the session.jsonl line", () => EditorGUIUtility.systemCopyBuffer = AIFormat.JsonLine(e)));
+            if (e.fingerprint != null)
+                actions.Add(DetailButton("Similar", "Show every log of this kind (same fingerprint)", () => _search.value = "fp:" + e.fingerprint));
+            _detailsBody.Add(actions);
 
             if (e.IsCompile && e.file != null)
             {
-                Section("LOCATION");
-                var loc = Kv("File", $"{e.file}:{e.line}:{e.column}");
+                var card = Card("Location");
+                var loc = new VisualElement { tooltip = "Click to open" };
+                loc.AddToClassList("aic-d-location");
+                var fileName = new Label($"{Path.GetFileName(e.file)}:{e.line}:{e.column}");
+                fileName.AddToClassList("aic-d-location__file");
+                var dir = new Label(Path.GetDirectoryName(e.file)?.Replace('\\', '/') + "/");
+                dir.AddToClassList("aic-d-location__dir");
+                loc.Add(fileName);
+                loc.Add(dir);
                 loc.AddManipulator(new Clickable(() => OpenSource(e.file, e.line)));
-                _details.Add(loc);
+                card.Add(loc);
             }
 
             if (e.FieldCount > 0)
             {
-                Section("FIELDS");
-                for (int i = 0; i < e.FieldCount; i++) _details.Add(Kv(e.fieldKeys[i], e.fieldValues[i]));
+                var card = Card("Fields");
+                for (int i = 0; i < e.FieldCount; i++) card.Add(Kv(e.fieldKeys[i], e.fieldValues[i]));
             }
 
             if (!string.IsNullOrEmpty(e.context))
             {
-                Section("CONTEXT");
+                var card = Card("Context");
                 var ctx = Kv("Object", e.context);
                 if (e.contextId != 0)
                 {
                     ctx.tooltip = "Click to select it";
+                    ctx.AddToClassList("aic-d-kv--link");
                     ctx.AddManipulator(new Clickable(() => PingContext(e)));
                 }
 
-                _details.Add(ctx);
+                card.Add(ctx);
             }
 
             var frames = e.Frames;
             if (frames.Count > 0) AddFrames(frames);
 
-            if (TryGetSourceLocation(e, out string srcFile, out int srcLine)) AddSourcePreview(srcFile, srcLine);
-
-            // Actions
-            var actions = new VisualElement();
-            actions.AddToClassList("aic-d-actions");
-            if (TryGetSourceLocation(e, out _, out _)) actions.Add(new Button(() => OpenBestSource(e)) { text = "Open Source" });
-            if (e.contextId != 0) actions.Add(new Button(() => PingContext(e)) { text = "Select Object" });
-            actions.Add(new Button(() => EditorGUIUtility.systemCopyBuffer = PlainText(e)) { text = "Copy" });
-            actions.Add(new Button(() => EditorGUIUtility.systemCopyBuffer = AIFormat.EntryMarkdown(e)) { text = "Copy for AI" });
-            actions.Add(new Button(() => EditorGUIUtility.systemCopyBuffer = AIFormat.JsonLine(e)) { text = "Copy JSON" });
-            if (e.fingerprint != null) actions.Add(new Button(() => _search.value = "fp:" + e.fingerprint) { text = "Show Similar" });
-            _details.Add(actions);
+            if (srcFile != null) AddSourcePreview(srcFile, srcLine);
         }
 
-        private static void Meta(VisualElement parent, string text)
+        /// <summary>"Compile warning", "Exception", … for the kind badge.</summary>
+        private static string KindTitle(ConsoleEntry e)
         {
-            var l = new Label(text);
-            l.AddToClassList("aic-d-meta");
-            parent.Add(l);
+            switch (e.kind)
+            {
+                case EntryKind.CompileError: return "Compile error";
+                case EntryKind.CompileWarning: return "Compile warning";
+                case EntryKind.Exception: return "Exception";
+                case EntryKind.Assert: return "Assert";
+                case EntryKind.Error: return "Error";
+                case EntryKind.Warning: return "Warning";
+                case EntryKind.Marker: return "Marker";
+                default: return "Log";
+            }
         }
 
-        private void Section(string title)
+        /// <summary>
+        /// Title and body of a message. Compiler messages drop the "path(line,col): warning CS0162:" prefix
+        /// (location and code are shown on their own).
+        /// </summary>
+        private static void SplitMessage(ConsoleEntry e, out string title, out string rest)
         {
-            var l = new Label(title);
+            string m = (e.IsCompile ? AIFormat.CompilerText(e) : e.message) ?? "";
+            if (e.IsCompile)
+            {
+                int colon = m.IndexOf(": ", StringComparison.Ordinal);
+                if (colon > 0 && StackTraceParser.CompilerCode(m.Substring(0, colon + 1)) != null) m = m.Substring(colon + 2);
+            }
+
+            m = m.Replace("\r\n", "\n").TrimEnd('\n');
+            int nl = m.IndexOf('\n');
+            title = nl < 0 ? m : m.Substring(0, nl);
+            rest = nl < 0 ? "" : m.Substring(nl + 1).Trim('\n');
+        }
+
+        private static Button DetailButton(string text, string tooltip, Action onClick)
+        {
+            var b = new Button(onClick) { text = text, tooltip = tooltip };
+            b.AddToClassList("aic-d-btn");
+            return b;
+        }
+
+        /// <summary>A titled section; returns the element to add rows to.</summary>
+        private VisualElement Card(string title)
+        {
+            var card = new VisualElement();
+            card.AddToClassList("aic-d-card");
+            var l = new Label(title.ToUpperInvariant());
             l.AddToClassList("aic-d-section");
-            _details.Add(l);
+            card.Add(l);
+            _detailsBody.Add(card);
+            return card;
         }
 
         private static VisualElement Kv(string key, string value)
@@ -1953,7 +2060,7 @@ namespace UtilityTools.AIConsole
         {
             bool chain = false;
             foreach (var f in frames) chain |= f.IsSeparator;
-            Section(chain ? "EXCEPTION CHAIN" : "STACK TRACE");
+            var card = Card(chain ? "Exception chain" : "Stack trace");
 
             bool showEngine = User.showEngineFrames;
             int hidden = 0;
@@ -1964,17 +2071,17 @@ namespace UtilityTools.AIConsole
                 {
                     hidden++;
                     bool nextVisible = i + 1 >= frames.Count || frames[i + 1].IsUser || frames[i + 1].IsSeparator;
-                    if (nextVisible) { AddEngineToggle(hidden); hidden = 0; }
+                    if (nextVisible) { card.Add(EngineToggle(hidden)); hidden = 0; }
                     continue;
                 }
 
-                _details.Add(FrameRow(f));
+                card.Add(FrameRow(f));
             }
         }
 
-        private void AddEngineToggle(int count)
+        private Label EngineToggle(int count)
         {
-            var t = new Label($"▸ {count} engine frame{(count == 1 ? "" : "s")}");
+            var t = new Label($"▸ {count} engine frame{(count == 1 ? "" : "s")}") { tooltip = "Show Unity / package frames" };
             t.AddToClassList("aic-frame-toggle");
             t.AddManipulator(new Clickable(() =>
             {
@@ -1982,7 +2089,7 @@ namespace UtilityTools.AIConsole
                 SaveUser();
                 RefreshDetails(true);
             }));
-            _details.Add(t);
+            return t;
         }
 
         private VisualElement FrameRow(StackFrameInfo f)
@@ -2038,26 +2145,43 @@ namespace UtilityTools.AIConsole
             var lines = SourceCache.Get(file);
             if (lines == null || line <= 0 || line > lines.Length) return;
 
-            Section("SOURCE");
-            var box = new VisualElement();
+            var card = Card("Source");
+            var box = new VisualElement { tooltip = "Click to open " + file + ":" + line };
             box.AddToClassList("aic-source");
             box.AddManipulator(new Clickable(() => OpenSource(file, line)));
-            box.tooltip = "Click to open";
 
-            var title = new Label($"{file}:{line}");
-            title.AddToClassList("aic-source__title");
-            box.Add(title);
+            var head = new VisualElement();
+            head.AddToClassList("aic-source__head");
+            var name = new Label(Path.GetFileName(file));
+            name.AddToClassList("aic-source__name");
+            var at = new Label("line " + line.ToString(CultureInfo.InvariantCulture));
+            at.AddToClassList("aic-source__at");
+            head.Add(name);
+            head.Add(at);
+            box.Add(head);
 
+            // Drop the common indentation so the code starts at the left edge of the box.
             int from = Math.Max(1, line - 3), to = Math.Min(lines.Length, line + 3);
+            int indent = int.MaxValue;
+            for (int n = from; n <= to; n++)
+            {
+                string s = lines[n - 1].Replace("\t", "    ");
+                if (s.Trim().Length == 0) continue;
+                indent = Math.Min(indent, s.Length - s.TrimStart().Length);
+            }
+
+            if (indent == int.MaxValue) indent = 0;
             for (int n = from; n <= to; n++)
             {
                 var row = new VisualElement();
                 row.AddToClassList("aic-source__line");
                 row.EnableInClassList("aic-source__line--hit", n == line);
 
+                string text = lines[n - 1].Replace("\t", "    ");
+                text = text.Length >= indent ? text.Substring(indent) : text.TrimStart();
                 var no = new Label(n.ToString(CultureInfo.InvariantCulture));
                 no.AddToClassList("aic-source__no");
-                var code = new Label(lines[n - 1].Replace("\t", "    ")) { enableRichText = false };
+                var code = new Label(text) { enableRichText = false };
                 code.AddToClassList("aic-source__code");
                 if (s_HasMonoFont)
                 {
@@ -2070,7 +2194,7 @@ namespace UtilityTools.AIConsole
                 box.Add(row);
             }
 
-            _details.Add(box);
+            card.Add(box);
         }
 
         // ---------- Row menu & actions ----------

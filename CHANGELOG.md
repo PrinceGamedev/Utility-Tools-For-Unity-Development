@@ -33,6 +33,14 @@ All notable changes to this package are documented here. Both the package and ea
   width for all rows (messages line up), one font size across the row, hairlines between rows, and
   `File.cs:line` on the right for compile messages.
 - **Stack traces read better:** `Class.Method` and `File.cs:line`; full names and paths in tooltips.
+- **Details pane redesigned:** padded layout; a meta line (kind, compiler code linking to its docs,
+  `#id`, time, Play/Edit · scene, frame); the message as a bold title (compiler messages without the
+  path and code prefix) with the rest below; tags; actions at the top (*Open File.cs:line* first,
+  Copy, Copy for AI, JSON, Similar); Location / Fields / Context / Stack trace / Source as separated
+  sections; the source preview with a file header, common indentation removed and the line marked.
+
+### Fixes
+- AI Console: the tags bar could stay empty after a script reload (cached UI state survived the reload).
 
 ### ULog 1.1.0
 - `LogTag` — a tag with its colour, defined once (`public static readonly LogTag UI = new LogTag("UI",

@@ -24,6 +24,7 @@ namespace UtilityTools.AIConsole
         private static ConsoleStore.CompileState s_LastCompile;
         private static bool s_WarnedIo;
         private static bool s_Flushing;
+        private static bool s_RotatePending;
 
         public static string Folder
         {
@@ -43,7 +44,10 @@ namespace UtilityTools.AIConsole
         static AIBridge()
         {
             // Touch ConsoleCapture first so IsNewEditorSession and the snapshot are ready.
-            bool newSession = ConsoleCapture.IsNewEditorSession;
+            // Rotation runs inside the first flush, before anything of this session is appended —
+            // a separate delayed rotation could run after an early flush and move this session's
+            // first entries into session.prev.jsonl.
+            s_RotatePending = ConsoleCapture.IsNewEditorSession;
 
             ConsoleStore.Added += OnAdded;
             ConsoleStore.Changed += OnChanged;
@@ -55,8 +59,6 @@ namespace UtilityTools.AIConsole
 
             EditorApplication.delayCall += () =>
             {
-                if (!Enabled) return;
-                if (newSession) StartNewSessionFiles();
                 s_Dirty = true;
                 Flush(true);
             };
@@ -108,6 +110,12 @@ namespace UtilityTools.AIConsole
             {
                 ConsoleCapture.Drain();
                 Directory.CreateDirectory(FullFolder);
+                if (s_RotatePending)
+                {
+                    s_RotatePending = false;
+                    StartNewSessionFiles();
+                }
+
                 AppendSession();
                 var settings = ConsoleProjectSettings.instance;
                 TryWrite("errors.md", AIFormat.IssuesDigest(Mathf.Max(1, settings.aiTopGroups),

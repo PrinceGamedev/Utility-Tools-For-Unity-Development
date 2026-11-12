@@ -46,6 +46,51 @@ namespace UtilityTools.Tests
             Assert.AreEqual(0, kept.Count);
         }
 
+        [Test]
+        public void UnityConsole_CanBeRead()
+        {
+            // Recovering compile errors at Editor start reads Unity's Console through an internal API.
+            Assert.IsTrue(ConsoleCapture.TryReadUnityConsole(out var lines),
+                "UnityEditor.LogEntries changed in this Unity version");
+            Assert.IsNotNull(lines);
+        }
+
+        [Test]
+        public void AddCompilerLines_AddsOnlyCompilerMessages_Once()
+        {
+            var saved = new List<ConsoleEntry>(ConsoleStore.CompileIssues);
+            ConsoleStore.ClearCompileIssues();
+            ConsoleStore.ForgetDismissedCompileIssues();
+            try
+            {
+                var lines = new[]
+                {
+                    @"Assets\Editor\Tool.cs(122,58): error CS1010: Newline in constant",
+                    "Assets/Game.cs(3,1): warning CS0162: Unreachable code detected",
+                    "Hello from a plain log",
+                    "",
+                    null
+                };
+
+                Assert.AreEqual(2, ConsoleCapture.AddCompilerLines(lines));
+                Assert.AreEqual(1, ConsoleStore.CompileErrorCount);
+                var error = ConsoleStore.CompileIssues[0];
+                Assert.AreEqual(EntryKind.CompileError, error.kind);
+                Assert.AreEqual("Assets/Editor/Tool.cs", error.file);
+                Assert.AreEqual(122, error.line);
+                Assert.AreEqual(58, error.column);
+                StringAssert.Contains("Newline in constant", error.message);
+
+                Assert.AreEqual(0, ConsoleCapture.AddCompilerLines(lines), "known messages aren't added again");
+                Assert.AreEqual(2, ConsoleStore.CompileIssues.Count);
+            }
+            finally
+            {
+                ConsoleStore.SetCompileIssues(saved);
+                ConsoleStore.ForgetDismissedCompileIssues();
+            }
+        }
+
         [TestCase("Library/ScriptAssemblies/Assembly-CSharp.dll", "Assembly-CSharp")]
         [TestCase("UtilityTools.Editor.dll", "UtilityTools.Editor")]
         [TestCase("Game", "Game")]

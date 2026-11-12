@@ -49,6 +49,39 @@ namespace UtilityTools.Tests
             Assert.IsTrue(f[2].IsSeparator);
         }
 
+        // The string-search reader must agree with the regex it replaced on every line it accepts.
+        [TestCase("Spawner:Spawn (int) (at Assets/Scripts/Spawner.cs:42)", "Spawner:Spawn (int)", "Assets/Scripts/Spawner.cs", 42)]
+        [TestCase("A:B () (at C:/proj/Assets/A.cs:7)  ", "A:B ()", "C:/proj/Assets/A.cs", 7)]
+        [TestCase("Ui:On (System.Action`1<int>) (at ./Packages/x/Ui.cs:1234)", "Ui:On (System.Action`1<int>)", "./Packages/x/Ui.cs", 1234)]
+        public void TryParseUnityLine_ReadsMethodFileLine(string line, string method, string file, int lineNo)
+        {
+            Assert.IsTrue(StackTraceParser.TryParseUnityLine(line, out var m, out var f, out int n));
+            Assert.AreEqual(method, m);
+            Assert.AreEqual(file, f);
+            Assert.AreEqual(lineNo, n);
+        }
+
+        [TestCase("UnityEngine.Debug:Log (object)")]
+        [TestCase("A:B () (at Assets/A.cs:)")]
+        [TestCase("A:B () (at Assets/A.cs:12x)")]
+        [TestCase("A:B () (at Assets/(odd).cs:3)")]
+        [TestCase("  at Foo.Bar () [0x00012] in D:/Other/Bar.cs:17")]
+        [TestCase("")]
+        public void TryParseUnityLine_RejectsOtherLines(string line)
+        {
+            Assert.IsFalse(StackTraceParser.TryParseUnityLine(line, out _, out _, out _));
+        }
+
+        [Test]
+        public void ParseCached_SharesOneResultPerTrace()
+        {
+            var a = StackTraceParser.ParseCached(UnityTrace);
+            var b = StackTraceParser.ParseCached(new string(UnityTrace.ToCharArray()));
+            Assert.AreSame(a, b, "same text, same parsed frames");
+            Assert.AreEqual(StackTraceParser.Parse(UnityTrace).Count, a.Count);
+            Assert.AreEqual(0, StackTraceParser.ParseCached(null).Count);
+        }
+
         [Test]
         public void Parse_EmptyOrNull_ReturnsNoFrames()
         {

@@ -30,7 +30,7 @@ namespace UtilityTools.AIConsole
                 keywords = new HashSet<string>(new[]
                 {
                     "log", "logging", "ULog", "channel", "system", "console", "AI", "strip", "release", "define",
-                    "agent", "CLAUDE.md", "AGENTS.md", "Cursor", "Copilot", "commands"
+                    "agent", "CLAUDE.md", "AGENTS.md", "Cursor", "Copilot", "commands", "build", "tag", "filter", "development"
                 })
             };
 
@@ -57,6 +57,7 @@ namespace UtilityTools.AIConsole
             DrawBuild();
 
             EditorGUI.BeginChangeCheck();
+            DrawBuildLogs(project);
             DrawCapture(project);
             DrawAI(project);
             DrawAgents(project);
@@ -288,6 +289,120 @@ namespace UtilityTools.AIConsole
             DefineToggle(target, DefineSilence, "Silence Debug.Log in release builds",
                 "Defines UTILITYTOOLS_SILENCE_UNITY_LOGS: plain Debug.Log/LogWarning (e.g. third-party code) are filtered " +
                 "in non-development builds; errors and exceptions still pass.");
+        }
+
+        // ---------- Logs in builds ----------
+        private static List<string> s_BuildTagNames;
+        private static double s_BuildTagNamesTime;
+
+        /// <summary>Tags in code, systems, tags seen in this session and tags already picked — sorted.</summary>
+        private static List<string> BuildTagNames(ConsoleProjectSettings s)
+        {
+            if (s_BuildTagNames != null && EditorApplication.timeSinceStartup - s_BuildTagNamesTime < 1) return s_BuildTagNames;
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var names = new List<string>();
+            void Add(string n)
+            {
+                if (!string.IsNullOrEmpty(n) && seen.Add(n)) names.Add(n);
+            }
+
+            foreach (var t in LogTag.All) Add(t.Name);
+            foreach (var c in LogChannel.All)
+                if (c != ULog.Default) Add(c.Name);
+            foreach (var e in ConsoleStore.Entries)
+                if (!e.IsCompile)
+                    foreach (var t in e.AllTags) Add(t);
+            foreach (var t in s.devBuildLogs.tags) Add(t);
+            foreach (var t in s.releaseBuildLogs.tags) Add(t);
+
+            names.Sort(StringComparer.OrdinalIgnoreCase);
+            s_BuildTagNames = names;
+            s_BuildTagNamesTime = EditorApplication.timeSinceStartup;
+            return names;
+        }
+
+        private static void DrawBuildLogs(ConsoleProjectSettings s)
+        {
+            Header("Logs in builds",
+                "Pick the tags each kind of player build keeps. Other logs are dropped before Unity writes them " +
+                "(no output, no stack trace). A log is kept when any of its tags is picked. The Editor always shows " +
+                "every log. Release builds already leave out ULog Info / Warning (compiler).");
+
+            var dev = s.devBuildLogs;
+            var rel = s.releaseBuildLogs;
+            const float col = 92;
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Label("", GUILayout.Width(200));
+                GUILayout.Label("Development", EditorStyles.miniBoldLabel, GUILayout.Width(col));
+                GUILayout.Label("Release", EditorStyles.miniBoldLabel, GUILayout.Width(col));
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Label(new GUIContent("Filter logs by tag", "Off = the build keeps every log."), GUILayout.Width(200));
+                dev.filter = EditorGUILayout.Toggle(dev.filter, GUILayout.Width(col));
+                rel.filter = EditorGUILayout.Toggle(rel.filter, GUILayout.Width(col));
+            }
+
+            if (!dev.filter && !rel.filter)
+            {
+                EditorGUILayout.LabelField("Both build types keep every log.", EditorStyles.miniLabel);
+                return;
+            }
+
+            EditorGUILayout.Space(2);
+            var names = BuildTagNames(s);
+            if (names.Count == 0)
+                EditorGUILayout.HelpBox("No tags yet. Define LogTags (see Tags above) or log with a [Tag] prefix, then come back.",
+                    MessageType.Info);
+
+            foreach (var name in names)
+            {
+                using (new EditorGUILayout.HorizontalScope())
+                {
+                    var rect = GUILayoutUtility.GetRect(10, 10, GUILayout.Width(10), GUILayout.Height(10));
+                    rect.y += 4;
+                    ColorUtility.TryParseHtmlString(ChannelConfig.ColorFor(name), out var c);
+                    EditorGUI.DrawRect(rect, c);
+                    GUILayout.Label(name, GUILayout.Width(186));
+                    BuildTagToggle(dev, name, col);
+                    BuildTagToggle(rel, name, col);
+                }
+            }
+
+            EditorGUILayout.Space(4);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Label(new GUIContent("Logs without a tag",
+                    "Plain Debug.Log lines with no [Tag] — mostly third-party SDKs."), GUILayout.Width(200));
+                using (new EditorGUI.DisabledScope(!dev.filter)) dev.keepUntagged = EditorGUILayout.Toggle(dev.keepUntagged, GUILayout.Width(col));
+                using (new EditorGUI.DisabledScope(!rel.filter)) rel.keepUntagged = EditorGUILayout.Toggle(rel.keepUntagged, GUILayout.Width(col));
+            }
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                GUILayout.Label(new GUIContent("Errors and exceptions (any tag)",
+                    "Keep every error, assert and exception, whatever its tags."), GUILayout.Width(200));
+                using (new EditorGUI.DisabledScope(!dev.filter)) dev.keepErrors = EditorGUILayout.Toggle(dev.keepErrors, GUILayout.Width(col));
+                using (new EditorGUI.DisabledScope(!rel.filter)) rel.keepErrors = EditorGUILayout.Toggle(rel.keepErrors, GUILayout.Width(col));
+            }
+
+            EditorGUILayout.Space(2);
+            EditorGUILayout.LabelField("Development builds keep: " + dev.Describe(), EditorStyles.miniLabel);
+            EditorGUILayout.LabelField("Release builds keep: " + rel.Describe(), EditorStyles.miniLabel);
+        }
+
+        private static void BuildTagToggle(BuildLogRules rules, string tag, float width)
+        {
+            using (new EditorGUI.DisabledScope(!rules.filter))
+            {
+                bool on = rules.Has(tag);
+                bool next = EditorGUILayout.Toggle(on, GUILayout.Width(width));
+                if (next != on) rules.Set(tag, next);
+            }
         }
 
         private static void DefineToggle(NamedBuildTarget target, string define, string label, string tooltip)

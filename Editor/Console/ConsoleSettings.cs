@@ -18,6 +18,40 @@ namespace UtilityTools.AIConsole
 
     internal enum ChannelOverride { Default, On, Off }
 
+    /// <summary>Which logs one kind of player build keeps (Project Settings → Logs in builds).</summary>
+    [Serializable]
+    internal sealed class BuildLogRules
+    {
+        public bool filter;                                  // off = the build keeps every log
+        public List<string> tags = new List<string>();       // tags and systems that are kept
+        public bool keepUntagged = true;                     // logs without a [Tag] (third-party code)
+        public bool keepErrors = true;                       // errors, asserts and exceptions always pass
+
+        public bool Has(string tag)
+        {
+            for (int i = 0; i < tags.Count; i++)
+                if (string.Equals(tags[i], tag, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        public void Set(string tag, bool keep)
+        {
+            tags.RemoveAll(t => string.Equals(t, tag, StringComparison.OrdinalIgnoreCase));
+            if (keep) tags.Add(tag);
+        }
+
+        /// <summary>"UI, GA + untagged + errors" — for the build log line and the settings page.</summary>
+        public string Describe()
+        {
+            if (!filter) return "every log";
+            var parts = new List<string>();
+            if (tags.Count > 0) parts.Add(string.Join(", ", tags));
+            if (keepUntagged) parts.Add("untagged");
+            if (keepErrors) parts.Add("errors");
+            return parts.Count == 0 ? "no logs" : string.Join(" + ", parts);
+        }
+    }
+
     /// <summary>A tag colour picked in the window by 1.3.0; tags are now defined in code (LogTag).</summary>
     [Serializable]
     internal sealed class TagSetting
@@ -42,6 +76,10 @@ namespace UtilityTools.AIConsole
         public bool richTextTags = true;
         public List<ChannelSetting> channels = new List<ChannelSetting>();
         public List<TagSetting> tags = new List<TagSetting>();
+
+        // Logs in builds: which tags each kind of player build keeps
+        public BuildLogRules devBuildLogs = new BuildLogRules();
+        public BuildLogRules releaseBuildLogs = new BuildLogRules();
 
         // Capture
         public int maxEntries = 10000;
@@ -166,6 +204,7 @@ namespace UtilityTools.AIConsole
         static ChannelConfig()
         {
             LogChannel.Registered += OnRegistered;
+            LogTag.Registered += _ => ForgetColors();
             ConsoleProjectSettings.Changed += ApplyAll;
             ConsoleUserSettings.Changed += ApplyAll;
             EditorApplication.delayCall += ApplyAll; // settings singletons load lazily; apply once ready
@@ -173,6 +212,7 @@ namespace UtilityTools.AIConsole
 
         private static void OnRegistered(LogChannel channel)
         {
+            ForgetColors();
             // Channels may be created from static initializers on any thread; settings are main-thread only.
             if (System.Threading.Thread.CurrentThread.ManagedThreadId == ULog.MainThreadId) Apply(channel);
             else EditorApplication.delayCall += () => Apply(channel);
@@ -184,6 +224,7 @@ namespace UtilityTools.AIConsole
 
         public static void ApplyAll()
         {
+            ForgetColors();
             var project = ConsoleProjectSettings.instance;
             ULog.MinLevel = project.globalMinLevel;
             ULog.RichTextTags = project.richTextTags;
@@ -221,6 +262,30 @@ namespace UtilityTools.AIConsole
         public static string ColorFor(string system)
         {
             if (string.IsNullOrEmpty(system)) return null;
+            if (s_ColorCacheStale)
+            {
+                s_ColorCacheStale = false;
+                s_ColorCache.Clear();
+            }
+
+            if (!s_ColorCache.TryGetValue(system, out var color))
+            {
+                color = ResolveColor(system);
+                s_ColorCache[system] = color;
+            }
+
+            return color;
+        }
+
+        // ColorFor runs for every tag chip and row; the lookup below walks tags, settings and channels.
+        // Main thread only; the flag may be raised from any thread (tags and channels can be created anywhere).
+        private static readonly Dictionary<string, string> s_ColorCache = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static volatile bool s_ColorCacheStale;
+
+        private static void ForgetColors() => s_ColorCacheStale = true;
+
+        private static string ResolveColor(string system)
+        {
             var code = LogTag.Find(system);
             if (code != null) return code.ColorHex;
             var tag = ConsoleProjectSettings.instance.FindTag(system);

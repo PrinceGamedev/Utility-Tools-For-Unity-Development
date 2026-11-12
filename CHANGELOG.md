@@ -6,6 +6,37 @@ All notable changes to this package are documented here. Both the package and ea
 `## [x.y.z]` is the **package** release you install. Inside each release, `### Feature x.y.z` is that
 **feature's** own version; features not listed are unchanged.
 
+## [1.4.2] - 2026-11-12
+
+### AI Console 1.1.2
+- Compile errors are no longer missing when the Editor opens a project whose scripts don't compile.
+  Those scripts were compiled before the console loaded, so `status.txt` said `compile=failed
+  compile_errors=0`, `errors.md` listed none and the window showed none. The console now reads them
+  from Unity's own Console on load (file, line, column and message). If that isn't possible in a
+  Unity version, it asks Unity to compile once more, once per Editor session, which reports them.
+
+## [1.4.1] - 2026-11-12
+
+### AI Console 1.1.1
+Fixes the Editor stutter while the AI Console is open and a game logs a lot. Measured in a real
+project in Play Mode at 600 logs per second: frame time p95 went from 29.0 ms to 19.4 ms (Unity's own
+Console: 17.4 ms); capturing a log went from 114 µs to 22 µs.
+- New logs no longer rebuild the whole window. Rows, tag counts and the status are brought up to date
+  with only what arrived, at most five times a second, and not at all while the tab is hidden. A full
+  rebuild still happens when the view changes (search, filters, sort, Collapse, Clear, compiles).
+- The tags bar keeps its chips and only updates their counts. It used to recreate every chip for each
+  new log, which made Unity lay the window out again each time.
+- The timeline redraws at most once a second, and only the bars whose numbers changed.
+- A repeat of the selected log updates its "×n" instead of rebuilding the details pane (which
+  re-reads the source file and the stack).
+- The tab title is only set again when the error count changes.
+- Stack traces are read without regular expressions and cached by their text: logs from the same
+  place share one parsed trace. Capture and the `session.jsonl` writer both used to parse every trace
+  in full.
+- Tag colours are cached instead of looked up for every chip and row.
+- `errors.md` is rewritten only when errors, warnings or compile results change, not for every batch
+  of ordinary logs.
+
 ## [1.4.0] - 2026-10-28
 
 ### AI Console 1.1.0
@@ -51,6 +82,11 @@ All notable changes to this package are documented here. Both the package and ea
   "#4FC3F7");`) and used anywhere: `$"{Tags.UI} Opened"` writes `[UI] Opened`;
   `Tagged(params LogTag[])` on channels and `ULog`. `LogTag.All`, `LogTag.Find(name)`.
 - Unity's Console uses the `LogTag` colour for tags in rich text.
+- **Logs in builds:** Project Settings → AI Console → *Logs in builds* picks, per build type
+  (Development / Release), the tags a player keeps, plus switches for untagged logs and for errors.
+  The build stores the choice. The player then drops every other log, ULog and plain `Debug.Log`
+  (`[Tag]` prefixes) alike, before Unity writes it: no output and no stack trace. `LogFilter.Configure`
+  / `LogFilter.Clear` change it at runtime.
 
 ## [1.3.0] - 2026-10-28
 

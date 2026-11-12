@@ -3,6 +3,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
 using System.Text;
 using System.Threading;
 using UnityEditor;
@@ -68,6 +69,9 @@ namespace UtilityTools.AIConsole
                 ConsoleStore.Compile = EditorUtility.scriptCompilationFailed
                     ? ConsoleStore.CompileState.Failed
                     : ConsoleStore.CompileState.Ok;
+
+            // Queued before the AI bridge's first write, which then includes what is recovered.
+            EditorApplication.delayCall += RecoverCompileErrors;
 
             UpdateMainThreadState();
 
@@ -141,7 +145,18 @@ namespace UtilityTools.AIConsole
         private static bool TryHandleCompilerEcho(Pending p)
         {
             if (p.Record != null || (p.Type != LogType.Warning && p.Type != LogType.Error)) return false;
-            if (!StackTraceParser.TryParseCompilerLine(p.Condition, out var file, out int line, out int column,
+            return TryAddCompilerLine(p.Condition, p.Ticks, out _);
+        }
+
+        /// <summary>
+        /// Adds a Console line that is a compiler message ("Assets\X.cs(1,2): error CS1010: text") as a
+        /// compile issue. False when the line isn't a compiler message; <paramref name="added"/> is false
+        /// when the message is already known.
+        /// </summary>
+        private static bool TryAddCompilerLine(string text, long ticks, out bool added)
+        {
+            added = false;
+            if (!StackTraceParser.TryParseCompilerLine(text, out var file, out int line, out int column,
                     out bool isError, out var code))
                 return false;
 
@@ -150,9 +165,9 @@ namespace UtilityTools.AIConsole
             var kind = isError ? EntryKind.CompileError : EntryKind.CompileWarning;
             var e = new ConsoleEntry
             {
-                ticks = p.Ticks,
+                ticks = ticks,
                 kind = kind,
-                message = p.Condition.TrimEnd(),
+                message = text.TrimEnd(),
                 file = file,
                 line = line,
                 column = column,
@@ -161,7 +176,101 @@ namespace UtilityTools.AIConsole
             };
             e.fingerprint = StackTraceParser.Fingerprint(kind, file, e.message, null);
             ConsoleStore.AddCompileIssue(e);
+            added = true;
             return true;
+        }
+
+        /// <summary>Adds the compiler messages among <paramref name="consoleLines"/>; returns how many were new.</summary>
+        internal static int AddCompilerLines(IEnumerable<string> consoleLines)
+        {
+            int added = 0;
+            long ticks = DateTime.UtcNow.Ticks;
+            foreach (var text in consoleLines)
+                if (TryAddCompilerLine(text, ticks, out bool isNew) && isNew) added++;
+            return added;
+        }
+
+        // ---------- Compile errors from before this package loaded ----------
+        private const string RecoveryCompileKey = "UtilityTools.AIConsole.RecoveryCompile";
+
+        /// <summary>
+        /// When the Editor opens a project whose scripts don't compile, the failed assemblies were compiled
+        /// before this package subscribed to CompilationPipeline, and Unity doesn't always re-print their
+        /// messages as logs: the compile is known to have failed but no error is. Read them from Unity's
+        /// own Console; if that isn't possible, ask Unity to compile once more (once per Editor session),
+        /// which reports them through the compilation callbacks.
+        /// </summary>
+        private static void RecoverCompileErrors()
+        {
+            if (!EditorUtility.scriptCompilationFailed || ConsoleStore.CompileErrorCount > 0) return;
+            if (EditorApplication.isCompiling || ConsoleStore.Compile == ConsoleStore.CompileState.Compiling) return;
+
+            if (TryReadUnityConsole(out var lines) && AddCompilerLines(lines) > 0)
+            {
+                if (ConsoleStore.CompileErrorCount > 0)
+                {
+                    ConsoleStore.Compile = ConsoleStore.CompileState.Failed;
+                    ConsoleStore.NotifyChanged();
+                    return;
+                }
+
+                ConsoleStore.NotifyChanged(); // warnings only: still look for the errors below
+            }
+
+            if (SessionState.GetBool(RecoveryCompileKey, false)) return; // never loop
+            SessionState.SetBool(RecoveryCompileKey, true);
+            CompilationPipeline.RequestScriptCompilation();
+        }
+
+        /// <summary>
+        /// The messages in Unity's Console window (first line of each), read through the internal
+        /// <c>UnityEditor.LogEntries</c> API. False when this Unity version doesn't have it.
+        /// </summary>
+        internal static bool TryReadUnityConsole(out List<string> messages)
+        {
+            messages = new List<string>();
+            const BindingFlags Static = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            const BindingFlags Instance = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+            try
+            {
+                var editor = typeof(EditorWindow).Assembly;
+                var entries = editor.GetType("UnityEditor.LogEntries");
+                var entryType = editor.GetType("UnityEditor.LogEntry");
+                var start = entries?.GetMethod("StartGettingEntries", Static, null, Type.EmptyTypes, null);
+                var end = entries?.GetMethod("EndGettingEntries", Static, null, Type.EmptyTypes, null);
+                var get = entryType == null ? null
+                    : entries.GetMethod("GetEntryInternal", Static, null, new[] { typeof(int), entryType }, null);
+                var message = entryType?.GetField("message", Instance);
+                if (start == null || end == null || get == null || message == null || message.FieldType != typeof(string))
+                    return false;
+
+                int count = (int)start.Invoke(null, null);
+                try
+                {
+                    var entry = Activator.CreateInstance(entryType);
+                    var args = new object[2];
+                    for (int i = 0; i < count; i++)
+                    {
+                        args[0] = i;
+                        args[1] = entry;
+                        if (get.Invoke(null, args) is bool ok && !ok) continue;
+                        string text = message.GetValue(entry) as string;
+                        if (string.IsNullOrEmpty(text)) continue;
+                        int nl = text.IndexOf('\n');
+                        messages.Add(nl < 0 ? text : text.Substring(0, nl));
+                    }
+                }
+                finally
+                {
+                    end.Invoke(null, null);
+                }
+
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         /// <summary>Assembly a project script compiles into, or null when Unity doesn't know the file.</summary>

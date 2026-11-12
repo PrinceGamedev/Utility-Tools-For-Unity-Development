@@ -363,7 +363,7 @@ To pin a specific version, append a release tag (see the repo's
 [Tags](https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development/tags)) or a commit hash:
 
 ```
-https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.4.0
+https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.4.2
 ```
 
 ### Versions

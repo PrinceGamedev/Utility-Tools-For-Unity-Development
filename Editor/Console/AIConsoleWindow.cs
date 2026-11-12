@@ -77,6 +77,15 @@ namespace UtilityTools.AIConsole
         [NonSerialized] private int _detailsCount = -1;
         [NonSerialized] private string _systemsSignature = "";
 
+        // New logs don't rebuild the whole view: rows, tag counts and the timeline are brought up to date
+        // with only what arrived since the last refresh, a few times a second, and not while hidden.
+        private const double StreamInterval = 0.2, FullRebuildInterval = 0.5, ChipCountInterval = 0.5, TimelineInterval = 1.0;
+        [NonSerialized] private bool _storeDirty, _chipCountsStale, _timelineStale;
+        [NonSerialized] private bool _visible = true;
+        [NonSerialized] private double _lastStoreRefresh, _lastFullRebuild, _lastChipCounts, _lastTimeline;
+        [NonSerialized] private int _builtFirstId = -1, _builtLastId = -1, _builtCompileSig;
+        [NonSerialized] private int _titleErrors = -1;
+
         // ---------- UI ----------
         private ToolbarSearchField _search;
         private ToolbarToggle _logToggle, _warnToggle, _errorToggle;
@@ -180,7 +189,8 @@ namespace UtilityTools.AIConsole
             root.RegisterCallback<KeyDownEvent>(OnKeyDown, TrickleDown.TrickleDown);
             root.RegisterCallback<GeometryChangedEvent>(_ => ApplyResponsive());
 
-            ConsoleStore.Changed += MarkDirty;
+            ConsoleStore.Changed += OnStoreChanged;
+            ConsoleStore.Cleared += MarkDirty;
             ConsoleProjectSettings.Changed += MarkDirty;
             AICommands.Changed += MarkDirty;
             AgentSetup.Changed += OnAgentFilesChanged;
@@ -194,17 +204,49 @@ namespace UtilityTools.AIConsole
 
         private void OnDisable()
         {
-            ConsoleStore.Changed -= MarkDirty;
+            ConsoleStore.Changed -= OnStoreChanged;
+            ConsoleStore.Cleared -= MarkDirty;
             ConsoleProjectSettings.Changed -= MarkDirty;
             AICommands.Changed -= MarkDirty;
             AgentSetup.Changed -= OnAgentFilesChanged;
         }
 
+        /// <summary>The view changed (filter, sort, settings…): rebuild on the next tick.</summary>
         private void MarkDirty() => _dirty = true;
+
+        /// <summary>Logs arrived or the store changed: refreshed on a later tick, cheaply when possible.</summary>
+        private void OnStoreChanged() => _storeDirty = true;
+
+        private void OnBecameVisible() => _visible = true;
+
+        private void OnBecameInvisible() => _visible = false;
 
         private void Tick()
         {
-            if (_dirty) Rebuild();
+            if (_dirty)
+            {
+                Rebuild();
+                return;
+            }
+
+            if (!_visible) return; // catch up when the tab is shown again
+            double now = EditorApplication.timeSinceStartup;
+
+            if (_storeDirty && now - _lastStoreRefresh >= StreamInterval)
+            {
+                if (TryAppendNew())
+                {
+                    _storeDirty = false;
+                    _lastStoreRefresh = now;
+                }
+                else if (now - _lastFullRebuild >= FullRebuildInterval)
+                {
+                    Rebuild();
+                }
+            }
+
+            if (_chipCountsStale && now - _lastChipCounts >= ChipCountInterval) UpdateChipCounts();
+            if (_timelineStale && now - _lastTimeline >= TimelineInterval) UpdateTimeline();
         }
 
         private static void LoadAssets()
@@ -625,6 +667,20 @@ namespace UtilityTools.AIConsole
             }
         }
 
+        /// <summary>Only the counts on the side strip (cheap; runs as logs stream in).</summary>
+        private void UpdateRailBadges()
+        {
+            if (_rail == null) return;
+            bool expanded = User.railMode == RailMode.Expanded;
+            foreach (var item in _railItemsList)
+            {
+                if (item.BadgeText == null) continue;
+                string badge = item.BadgeText();
+                item.Badge.text = badge ?? "";
+                item.Badge.EnableInClassList("aic-hidden", string.IsNullOrEmpty(badge) || expanded);
+            }
+        }
+
         // ---------- Text size ----------
         // Six steps; each maps to a root class (aic--fs-N) whose USS variables size text, rows, chips and the strip.
         private static readonly int[] TextSizes = { 11, 12, 13, 14, 16, 18 };
@@ -992,20 +1048,23 @@ namespace UtilityTools.AIConsole
         {
             var names = TagNames();
 
-            // Rebuild chips only when names, counts, colours or selection changed.
+            // Rebuild chips only when names, colours, switches or selection changed. Counts change with every
+            // log; they are updated in place (UpdateChipCounts) — rebuilding ~40 chips on each log made Unity
+            // lay the window out again and again.
             var sig = new System.Text.StringBuilder();
             foreach (var n in names)
-            {
-                _systemCounts.TryGetValue(n, out int c);
-                _systemErrors.TryGetValue(n, out int e);
-                sig.Append(n).Append(c).Append('/').Append(e).Append(_systemFilter.Contains(n) ? '*' : '-')
+                sig.Append(n).Append(_systemFilter.Contains(n) ? '*' : '-')
                     .Append(IsChannelOff(n) ? 'x' : 'o').Append(ChannelConfig.ColorFor(n)).Append('|');
-            }
 
             sig.Append(User.systemsOpen).Append(User.tagMatchAll);
             string signature = sig.ToString();
             _systems.style.display = DisplayStyle.Flex;
-            if (signature == _systemsSignature) return;
+            if (signature == _systemsSignature)
+            {
+                UpdateChipCounts();
+                return;
+            }
+
             _systemsSignature = signature;
 
             bool open = User.systemsOpen;
@@ -1021,6 +1080,7 @@ namespace UtilityTools.AIConsole
             _tagsClear.EnableInClassList("aic-hidden", !open || _systemFilter.Count == 0);
 
             _systemsChips.Clear();
+            _chipViews.Clear();
             if (!open) return;
             if (names.Count == 0)
             {
@@ -1032,29 +1092,62 @@ namespace UtilityTools.AIConsole
             }
 
             foreach (var n in names) _systemsChips.Add(MakeChip(n));
+            UpdateChipCounts();
+        }
+
+        /// <summary>A chip in the tags bar; its counts change in place.</summary>
+        private sealed class ChipView
+        {
+            public VisualElement Root;
+            public Label Count, Errors;
+            public string TipHead, TipTail;
+            public int ShownCount = -1, ShownErrors = -1;
+        }
+
+        private readonly Dictionary<string, ChipView> _chipViews = new Dictionary<string, ChipView>(StringComparer.Ordinal);
+
+        /// <summary>Writes the current log and error counts into the chips (only those that changed).</summary>
+        private void UpdateChipCounts()
+        {
+            _chipCountsStale = false;
+            _lastChipCounts = EditorApplication.timeSinceStartup;
+            foreach (var kv in _chipViews)
+            {
+                var v = kv.Value;
+                _systemCounts.TryGetValue(kv.Key, out int count);
+                _systemErrors.TryGetValue(kv.Key, out int errors);
+                if (count == v.ShownCount && errors == v.ShownErrors) continue;
+                v.ShownCount = count;
+                v.ShownErrors = errors;
+
+                v.Count.text = count.ToString(CultureInfo.InvariantCulture);
+                v.Errors.text = errors.ToString(CultureInfo.InvariantCulture);
+                v.Errors.EnableInClassList("aic-hidden", errors == 0);
+                v.Root.EnableInClassList("aic-tagchip--empty", count == 0);
+                v.Root.tooltip = v.TipHead + $"\n{count} log(s)" + (errors > 0 ? $", {errors} error(s)" : "") + v.TipTail;
+            }
         }
 
         /// <summary>A tag chip in the same style as the tags on log rows: the tag's colour, click to filter.</summary>
         private VisualElement MakeChip(string tag)
         {
-            _systemCounts.TryGetValue(tag, out int count);
-            _systemErrors.TryGetValue(tag, out int errors);
             bool off = IsChannelOff(tag);
             bool selected = _systemFilter.Contains(tag);
             var color = ParseColor(ChannelConfig.ColorFor(tag));
 
-            string where = LogTagDiscovery.Declarations.TryGetValue(tag, out var decl) ? "\nDefined in code: " + decl : "";
-            var chip = new VisualElement
+            var view = new ChipView
             {
-                tooltip = (off ? tag + " is switched off (only errors are logged)"
-                              : selected ? "Click to remove " + tag + " from the filter"
-                              : "Click to show " + tag + " logs (click more tags to combine)") +
-                          $"\n{count} log(s)" + (errors > 0 ? $", {errors} error(s)" : "") + where
+                TipHead = off ? tag + " is switched off (only errors are logged)"
+                    : selected ? "Click to remove " + tag + " from the filter"
+                    : "Click to show " + tag + " logs (click more tags to combine)",
+                TipTail = LogTagDiscovery.Declarations.TryGetValue(tag, out var decl) ? "\nDefined in code: " + decl : ""
             };
+            var chip = new VisualElement();
+            view.Root = chip;
+            _chipViews[tag] = view;
             chip.AddToClassList("aic-tagchip");
             chip.EnableInClassList("aic-tagchip--selected", selected);
             chip.EnableInClassList("aic-tagchip--dim", !selected && _systemFilter.Count > 0);
-            chip.EnableInClassList("aic-tagchip--empty", count == 0);
             chip.EnableInClassList("aic-tagchip--off", off);
 
             Color text = selected ? ReadableOn(color) : color;
@@ -1068,17 +1161,14 @@ namespace UtilityTools.AIConsole
             label.style.color = text;
             chip.Add(label);
 
-            var countLabel = new Label(count.ToString(CultureInfo.InvariantCulture));
-            countLabel.AddToClassList("aic-tagchip__count");
-            countLabel.style.color = new Color(text.r, text.g, text.b, 0.7f);
-            chip.Add(countLabel);
+            view.Count = new Label();
+            view.Count.AddToClassList("aic-tagchip__count");
+            view.Count.style.color = new Color(text.r, text.g, text.b, 0.7f);
+            chip.Add(view.Count);
 
-            if (errors > 0)
-            {
-                var err = new Label(errors.ToString(CultureInfo.InvariantCulture));
-                err.AddToClassList("aic-tagchip__errors");
-                chip.Add(err);
-            }
+            view.Errors = new Label();
+            view.Errors.AddToClassList("aic-tagchip__errors");
+            chip.Add(view.Errors);
 
             chip.AddManipulator(new Clickable(() =>
             {
@@ -1180,8 +1270,14 @@ namespace UtilityTools.AIConsole
 
         private long _timelineFrom, _timelineStep;
 
+        // Last values written per bucket: bars and tooltips are only touched when their numbers change.
+        [NonSerialized] private readonly int[] _timelineShown = new int[TimelineBuckets * 3];
+        [NonSerialized] private long _timelineShownFrom = -1, _timelineShownStep = -1;
+
         private void UpdateTimeline()
         {
+            _timelineStale = false;
+            _lastTimeline = EditorApplication.timeSinceStartup;
             var entries = ConsoleStore.Entries;
             int logs = 0;
             foreach (var e in entries)
@@ -1215,8 +1311,21 @@ namespace UtilityTools.AIConsole
             int max = 1;
             for (int i = 0; i < TimelineBuckets; i++) max = Math.Max(max, err[i] + warn[i] + log[i]);
 
+            // Bar heights scale with the busiest bucket: when it changes, every bar is redrawn.
+            bool all = from != _timelineShownFrom || step != _timelineShownStep || max != _timelineShownMax;
+            _timelineShownFrom = from;
+            _timelineShownStep = step;
+            _timelineShownMax = max;
+
             for (int i = 0; i < TimelineBuckets; i++)
             {
+                int k = i * 3;
+                if (!all && _timelineShown[k] == err[i] && _timelineShown[k + 1] == warn[i] && _timelineShown[k + 2] == log[i])
+                    continue;
+                _timelineShown[k] = err[i];
+                _timelineShown[k + 1] = warn[i];
+                _timelineShown[k + 2] = log[i];
+
                 var col = _timelineCols[i];
                 SetBar(col[0], err[i], max);
                 SetBar(col[1], warn[i], max);
@@ -1226,6 +1335,8 @@ namespace UtilityTools.AIConsole
                 col.tooltip = $"{start:HH:mm:ss}  ·  {err[i]} errors, {warn[i]} warnings, {log[i]} logs";
             }
         }
+
+        [NonSerialized] private int _timelineShownMax = -1;
 
         private static void SetBar(VisualElement bar, int count, int max)
         {
@@ -1269,33 +1380,32 @@ namespace UtilityTools.AIConsole
         /// </summary>
         private float TagColumnWidth()
         {
+            float max = 0;
+            foreach (var e in _rows)
+                if (e.kind != EntryKind.Marker)
+                    max = Mathf.Max(max, RowTagsWidth(e));
+            return max;
+        }
+
+        /// <summary>Width the tag chips of one row need, capped so the message keeps most of the row.</summary>
+        private float RowTagsWidth(ConsoleEntry e)
+        {
+            if (e.system == null && e.TagCount == 0) return 0;
             float font = ChipFontSizes[Mathf.Clamp(User.textSize, 0, ChipFontSizes.Length - 1)];
             float charW = font * 0.66f;
             const float chip = 12f + 4f; // padding + gap
-            float max = 0;
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-
-            foreach (var e in _rows)
+            float w = 0;
+            int shown = 0, total = 0;
+            foreach (var t in e.AllTags)
             {
-                if (e.kind == EntryKind.Marker) continue;
-                string key = e.TagsText;
-                if (string.IsNullOrEmpty(key) || !seen.Add(key)) continue;
-                float w = 0;
-                int shown = 0, total = 0;
-                foreach (var t in e.AllTags)
-                {
-                    total++;
-                    if (shown >= MaxRowTags) continue;
-                    shown++;
-                    w += t.Length * charW + chip;
-                }
-
-                if (total > shown) w += 3 * charW + 6;
-
-                if (w > max) max = w;
+                total++;
+                if (shown >= MaxRowTags) continue;
+                shown++;
+                w += t.Length * charW + chip;
             }
 
-            return max <= 0 ? 0 : Mathf.Ceil(Mathf.Min(max, 300f * font / 12f));
+            if (total > shown) w += 3 * charW + 6;
+            return w <= 0 ? 0 : Mathf.Ceil(Mathf.Min(w, 300f * font / 12f));
         }
 
         private VisualElement BuildList()
@@ -1454,18 +1564,8 @@ namespace UtilityTools.AIConsole
             _systemErrors.Clear();
 
             // Count every tag of every entry (system + extra tags) for the tag bar.
-            foreach (var e in ConsoleStore.Entries)
-            {
-                if (e.system == null && e.TagCount == 0) continue;
-                foreach (var tag in e.AllTags)
-                {
-                    _systemCounts.TryGetValue(tag, out int c);
-                    _systemCounts[tag] = c + 1;
-                    if (!e.IsError) continue;
-                    _systemErrors.TryGetValue(tag, out int er);
-                    _systemErrors[tag] = er + 1;
-                }
-            }
+            var entries = ConsoleStore.Entries;
+            foreach (var e in entries) CountTags(e);
 
             // Compile issues are current state: pinned on top.
             foreach (var c in ConsoleStore.CompileIssues)
@@ -1508,6 +1608,121 @@ namespace UtilityTools.AIConsole
             UpdateStatus();
             UpdateRail();
             RefreshDetails(false);
+
+            // What this view now shows, so the next logs can be appended instead of rebuilt.
+            _builtFirstId = entries.Count > 0 ? entries[0].id : -1;
+            _builtLastId = entries.Count > 0 ? entries[entries.Count - 1].id : -1;
+            _builtCompileSig = CompileSignature();
+            _storeDirty = false;
+            _lastFullRebuild = _lastStoreRefresh = EditorApplication.timeSinceStartup;
+        }
+
+        private void CountTags(ConsoleEntry e)
+        {
+            if (e.system == null && e.TagCount == 0) return;
+            foreach (var tag in e.AllTags)
+            {
+                _systemCounts.TryGetValue(tag, out int c);
+                _systemCounts[tag] = c + 1;
+                if (!e.IsError) continue;
+                _systemErrors.TryGetValue(tag, out int er);
+                _systemErrors[tag] = er + 1;
+            }
+        }
+
+        /// <summary>Changes when compile issues or the compile state change (both force a full rebuild).</summary>
+        private static int CompileSignature()
+        {
+            unchecked
+            {
+                int sig = (int)ConsoleStore.Compile * 7919 + ConsoleStore.CompileIssues.Count;
+                foreach (var c in ConsoleStore.CompileIssues) sig = sig * 31 + c.id;
+                return sig;
+            }
+        }
+
+        /// <summary>
+        /// Adds the logs that arrived since the last refresh to the rows, tag counts and status, without
+        /// walking the whole session. False when the view needs a full rebuild instead (cleared or trimmed
+        /// store, compile change, collapsed or non-time sort).
+        /// </summary>
+        private bool TryAppendNew()
+        {
+            if (_list == null) return false;
+            var u = User;
+            if (u.collapse || (u.sortMode != "time" && !string.IsNullOrEmpty(u.sortMode))) return false;
+            if (CompileSignature() != _builtCompileSig) return false;
+
+            var entries = ConsoleStore.Entries;
+            if (entries.Count == 0 || entries[0].id != _builtFirstId) return false;
+
+            int start = FirstIndexAfter(entries, _builtLastId);
+            if (start >= entries.Count) return true; // nothing new
+
+            bool rowsAdded = false, tagsChanged = false;
+            float width = _tagColumnWidth;
+            for (int i = start; i < entries.Count; i++)
+            {
+                var e = entries[i];
+                if (e.system != null || e.TagCount > 0)
+                {
+                    CountTags(e);
+                    tagsChanged = true;
+                }
+
+                if (e.kind == EntryKind.Marker && (_systemFilter.Count > 0 || !_query.IsEmpty)) continue;
+                if (!Visible(e, u)) continue;
+                _rows.Add(e);
+                rowsAdded = true;
+                if (e.kind != EntryKind.Marker) width = Mathf.Max(width, RowTagsWidth(e));
+            }
+
+            _builtLastId = entries[entries.Count - 1].id;
+
+            if (rowsAdded)
+            {
+                _tagColumnWidth = width;
+                _list.RefreshItems();
+                _emptyList.style.display = DisplayStyle.None;
+                if (u.follow) ScrollToNewest();
+            }
+
+            _logToggle.text = Count(ConsoleStore.LogCount);
+            _warnToggle.text = Count(ConsoleStore.WarningCount + CompileCount(EntryKind.CompileWarning));
+            _errorToggle.text = Count(ConsoleStore.ErrorCount + ConsoleStore.CompileErrorCount);
+
+            if (tagsChanged)
+            {
+                // A tag never seen before changes the chips themselves; otherwise only their counts.
+                foreach (var name in _systemCounts.Keys)
+                {
+                    if (_chipViews.ContainsKey(name)) continue;
+                    UpdateSystems();
+                    break;
+                }
+
+                _chipCountsStale = true;
+            }
+
+            _timelineStale = true;
+            UpdateStatus();
+            UpdateRailBadges();
+            RefreshDetails(false);
+            return true;
+        }
+
+        /// <summary>Index of the first entry whose id is greater than <paramref name="id"/> (ids increase).</summary>
+        private static int FirstIndexAfter(IReadOnlyList<ConsoleEntry> entries, int id)
+        {
+            int lo = 0, hi = entries.Count;
+            while (lo < hi)
+            {
+                int mid = (lo + hi) >> 1;
+                if (entries[mid].id <= id) lo = mid + 1;
+                else hi = mid;
+            }
+
+            return lo;
         }
 
         private bool Visible(ConsoleEntry e, ConsoleUserSettings u)
@@ -1807,7 +2022,10 @@ namespace UtilityTools.AIConsole
                 ? $"● AI files  {AIBridge.Folder}" + (AIBridge.LastWriteUtc == default ? "" : $"  · {AIBridge.LastWriteUtc.ToLocalTime():HH:mm:ss}")
                 : "○ AI files off";
 
+            // A new title repaints the dock area's tab strip: only when the count changes.
             int errors = ConsoleStore.ErrorCount + ConsoleStore.CompileErrorCount;
+            if (errors == _titleErrors) return;
+            _titleErrors = errors;
             titleContent = new GUIContent(errors > 0 ? $"AI Console ({errors})" : "AI Console", s_WindowIcon,
                 errors > 0 ? errors + " errors" : "AI Console");
         }
@@ -1823,8 +2041,26 @@ namespace UtilityTools.AIConsole
             if (_selectedId < 0) return;
             var e = ConsoleStore.FindById(_selectedId);
             if (e == null) return;
-            int count = ConsoleStore.GroupOf(e)?.Count ?? 1;
+            var group = ConsoleStore.GroupOf(e);
+            int count = group?.Count ?? 1;
+            if (!force && e.id == _detailsId && count != _detailsCount && _detailsRepeats != null)
+            {
+                // A repeat of the selected log: update its "×n" only. Rebuilding the pane re-reads the
+                // source file and the stack, which made a frequently repeated selection costly.
+                _detailsCount = count;
+                SetRepeats(group);
+                return;
+            }
+
             if (force || e.id != _detailsId || count != _detailsCount) ShowDetails(e);
+        }
+
+        [NonSerialized] private Label _detailsRepeats;
+
+        private void SetRepeats(EntryGroup group)
+        {
+            _detailsRepeats.text = "×" + group.Count.ToString(CultureInfo.InvariantCulture);
+            _detailsRepeats.tooltip = $"Logged {group.Count} times (first #{group.FirstId})";
         }
 
         private void ShowDetails(ConsoleEntry e)
@@ -1848,6 +2084,7 @@ namespace UtilityTools.AIConsole
 
             var group = ConsoleStore.GroupOf(e);
             _detailsCount = group?.Count ?? 1;
+            _detailsRepeats = null;
 
             // Meta line
             var meta = new VisualElement();
@@ -1886,9 +2123,10 @@ namespace UtilityTools.AIConsole
 
             if (group != null && group.Count > 1)
             {
-                var repeats = new Label($"×{group.Count}") { tooltip = $"Logged {group.Count} times (first #{group.FirstId})" };
-                repeats.AddToClassList("aic-row__badge");
-                meta.Add(repeats);
+                _detailsRepeats = new Label();
+                _detailsRepeats.AddToClassList("aic-row__badge");
+                SetRepeats(group);
+                meta.Add(_detailsRepeats);
             }
 
             _detailsBody.Add(meta);

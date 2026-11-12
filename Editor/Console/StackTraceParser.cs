@@ -77,6 +77,26 @@ namespace UtilityTools.AIConsole
         private static string ProjectRoot =>
             s_ProjectRoot ??= Path.GetFullPath(".").Replace('\\', '/').TrimEnd('/') + "/";
 
+        // Games log from the same few places again and again, so most stack traces are identical strings.
+        // Parsing one costs ~5 µs per line; the cache makes repeats a dictionary lookup. Main thread only.
+        private const int MaxCachedTraces = 2048;
+        private static readonly Dictionary<string, List<StackFrameInfo>> s_Parsed =
+            new Dictionary<string, List<StackFrameInfo>>(StringComparer.Ordinal);
+
+        /// <summary>
+        /// <see cref="Parse"/> with a cache keyed by the trace text. The returned list is shared between
+        /// every entry with the same trace: read it, never change it.
+        /// </summary>
+        internal static List<StackFrameInfo> ParseCached(string stackTrace)
+        {
+            if (string.IsNullOrEmpty(stackTrace)) return Parse(stackTrace);
+            if (s_Parsed.TryGetValue(stackTrace, out var frames)) return frames;
+            frames = Parse(stackTrace);
+            if (s_Parsed.Count >= MaxCachedTraces) s_Parsed.Clear(); // a burst of unique traces: start over
+            s_Parsed[stackTrace] = frames;
+            return frames;
+        }
+
         public static List<StackFrameInfo> Parse(string stackTrace)
         {
             var frames = new List<StackFrameInfo>();
@@ -94,8 +114,13 @@ namespace UtilityTools.AIConsole
                 }
 
                 var frame = new StackFrameInfo();
-                var unity = UnityAt.Match(line);
-                if (unity.Success)
+                if (TryParseUnityLine(line, out var method, out var file, out int lineNo))
+                {
+                    frame.Method = method;
+                    frame.File = NormalizePath(file);
+                    frame.Line = lineNo;
+                }
+                else if (UnityAt.Match(line) is var unity && unity.Success)
                 {
                     frame.Method = line.Substring(0, unity.Index).Trim();
                     frame.File = NormalizePath(unity.Groups["file"].Value);
@@ -124,6 +149,42 @@ namespace UtilityTools.AIConsole
             }
 
             return frames;
+        }
+
+        /// <summary>
+        /// Reads "Type:Method (args) (at Assets/File.cs:42)" with plain string searches — the regex costs
+        /// several times more and runs for every line of every log. Same rule as <see cref="UnityAt"/>: the
+        /// "(at …:n)" part ends the line and its path has no parentheses. False for anything else.
+        /// </summary>
+        internal static bool TryParseUnityLine(string line, out string method, out string file, out int lineNo)
+        {
+            method = file = null;
+            lineNo = 0;
+            int end = line.Length - 1;
+            while (end >= 0 && char.IsWhiteSpace(line[end])) end--;
+            if (end < 0 || line[end] != ')') return false;
+
+            int at = line.LastIndexOf("(at ", end, StringComparison.Ordinal);
+            if (at < 0) return false;
+
+            int colon = line.LastIndexOf(':', end - 1, end - at);
+            if (colon <= at + 4 || colon == end - 1) return false;
+
+            int n = 0;
+            for (int i = colon + 1; i < end; i++)
+            {
+                char c = line[i];
+                if (c < '0' || c > '9' || n > 100000000) return false;
+                n = n * 10 + (c - '0');
+            }
+
+            for (int i = at + 4; i < colon; i++)
+                if (line[i] == '(' || line[i] == ')') return false;
+
+            method = line.Substring(0, at).Trim();
+            file = line.Substring(at + 4, colon - at - 4);
+            lineNo = n;
+            return true;
         }
 
         /// <summary>

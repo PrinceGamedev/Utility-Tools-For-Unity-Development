@@ -27,6 +27,10 @@ namespace UtilityTools.AIConsole
         private static bool s_RotatePending;
         private static bool s_ReadmeChecked;
 
+        // errors.md lists only problems: rewrite it when they change, not for every batch of ordinary logs.
+        private static int s_IssuesVersion;
+        private static long s_DigestWritten = -1;
+
         public static string Folder
         {
             get
@@ -52,7 +56,11 @@ namespace UtilityTools.AIConsole
 
             ConsoleStore.Added += OnAdded;
             ConsoleStore.Changed += OnChanged;
-            ConsoleStore.Cleared += () => s_Dirty = true;
+            ConsoleStore.Cleared += () =>
+            {
+                s_Dirty = true;
+                s_IssuesVersion++;
+            };
             EditorApplication.update += Tick;
             AssemblyReloadEvents.beforeAssemblyReload += () => Flush(true);
             EditorApplication.quitting += OnQuitting;
@@ -67,6 +75,7 @@ namespace UtilityTools.AIConsole
 
         private static void OnAdded(ConsoleEntry e)
         {
+            if (e.IsError || e.IsWarning) s_IssuesVersion++;
             if (!Enabled) return;
             if (e.kind == EntryKind.Log && !ConsoleProjectSettings.instance.aiIncludeInfoLogs) return;
             s_PendingLines.Add(e);
@@ -127,9 +136,15 @@ namespace UtilityTools.AIConsole
                 }
 
                 AppendSession();
-                var settings = ConsoleProjectSettings.instance;
-                TryWrite("errors.md", AIFormat.IssuesDigest(Mathf.Max(1, settings.aiTopGroups),
-                    Mathf.Clamp(settings.aiUserFrames, 1, 10)), atomic: true);
+                long digest = IssuesSignature();
+                if (force || digest != s_DigestWritten)
+                {
+                    var settings = ConsoleProjectSettings.instance;
+                    TryWrite("errors.md", AIFormat.IssuesDigest(Mathf.Max(1, settings.aiTopGroups),
+                        Mathf.Clamp(settings.aiUserFrames, 1, 10)), atomic: true);
+                    s_DigestWritten = digest;
+                }
+
                 TryWrite("status.txt", AIFormat.Status(editorRunning: true), atomic: true);
 
                 s_LastCompile = ConsoleStore.Compile;
@@ -144,6 +159,18 @@ namespace UtilityTools.AIConsole
             finally
             {
                 s_Flushing = false;
+            }
+        }
+
+        /// <summary>Changes whenever errors.md would list something different.</summary>
+        private static long IssuesSignature()
+        {
+            unchecked
+            {
+                long sig = s_IssuesVersion;
+                sig = sig * 31 + (int)ConsoleStore.Compile;
+                foreach (var c in ConsoleStore.CompileIssues) sig = sig * 31 + c.id;
+                return sig;
             }
         }
 

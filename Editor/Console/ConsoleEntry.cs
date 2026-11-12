@@ -98,7 +98,8 @@ namespace UtilityTools.AIConsole
             }
         }
 
-        public List<StackFrameInfo> Frames => _frames ??= StackTraceParser.Parse(stackTrace);
+        /// <summary>Parsed stack trace. Shared with other entries that have the same trace: read only.</summary>
+        public List<StackFrameInfo> Frames => _frames ??= StackTraceParser.ParseCached(stackTrace);
 
         /// <summary>Short machine name used in filters and AI files.</summary>
         public string KindName => KindToName(kind);

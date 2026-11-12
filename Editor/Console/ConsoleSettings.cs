@@ -204,6 +204,7 @@ namespace UtilityTools.AIConsole
         static ChannelConfig()
         {
             LogChannel.Registered += OnRegistered;
+            LogTag.Registered += _ => ForgetColors();
             ConsoleProjectSettings.Changed += ApplyAll;
             ConsoleUserSettings.Changed += ApplyAll;
             EditorApplication.delayCall += ApplyAll; // settings singletons load lazily; apply once ready
@@ -211,6 +212,7 @@ namespace UtilityTools.AIConsole
 
         private static void OnRegistered(LogChannel channel)
         {
+            ForgetColors();
             // Channels may be created from static initializers on any thread; settings are main-thread only.
             if (System.Threading.Thread.CurrentThread.ManagedThreadId == ULog.MainThreadId) Apply(channel);
             else EditorApplication.delayCall += () => Apply(channel);
@@ -222,6 +224,7 @@ namespace UtilityTools.AIConsole
 
         public static void ApplyAll()
         {
+            ForgetColors();
             var project = ConsoleProjectSettings.instance;
             ULog.MinLevel = project.globalMinLevel;
             ULog.RichTextTags = project.richTextTags;
@@ -259,6 +262,30 @@ namespace UtilityTools.AIConsole
         public static string ColorFor(string system)
         {
             if (string.IsNullOrEmpty(system)) return null;
+            if (s_ColorCacheStale)
+            {
+                s_ColorCacheStale = false;
+                s_ColorCache.Clear();
+            }
+
+            if (!s_ColorCache.TryGetValue(system, out var color))
+            {
+                color = ResolveColor(system);
+                s_ColorCache[system] = color;
+            }
+
+            return color;
+        }
+
+        // ColorFor runs for every tag chip and row; the lookup below walks tags, settings and channels.
+        // Main thread only; the flag may be raised from any thread (tags and channels can be created anywhere).
+        private static readonly Dictionary<string, string> s_ColorCache = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static volatile bool s_ColorCacheStale;
+
+        private static void ForgetColors() => s_ColorCacheStale = true;
+
+        private static string ResolveColor(string system)
+        {
             var code = LogTag.Find(system);
             if (code != null) return code.ColorHex;
             var tag = ConsoleProjectSettings.instance.FindTag(system);

@@ -6,6 +6,28 @@ All notable changes to this package are documented here. Both the package and ea
 `## [x.y.z]` is the **package** release you install. Inside each release, `### Feature x.y.z` is that
 **feature's** own version; features not listed are unchanged.
 
+## [1.4.1] - 2026-11-12
+
+### AI Console 1.1.1
+Fixes the Editor stutter while the AI Console is open and a game logs a lot. Measured in a real
+project in Play Mode at 600 logs per second: frame time p95 went from 29.0 ms to 19.4 ms (Unity's own
+Console: 17.4 ms); capturing a log went from 114 µs to 22 µs.
+- New logs no longer rebuild the whole window. Rows, tag counts and the status are brought up to date
+  with only what arrived, at most five times a second, and not at all while the tab is hidden. A full
+  rebuild still happens when the view changes (search, filters, sort, Collapse, Clear, compiles).
+- The tags bar keeps its chips and only updates their counts. It used to recreate every chip for each
+  new log, which made Unity lay the window out again each time.
+- The timeline redraws at most once a second, and only the bars whose numbers changed.
+- A repeat of the selected log updates its "×n" instead of rebuilding the details pane (which
+  re-reads the source file and the stack).
+- The tab title is only set again when the error count changes.
+- Stack traces are read without regular expressions and cached by their text: logs from the same
+  place share one parsed trace. Capture and the `session.jsonl` writer both used to parse every trace
+  in full.
+- Tag colours are cached instead of looked up for every chip and row.
+- `errors.md` is rewritten only when errors, warnings or compile results change, not for every batch
+  of ordinary logs.
+
 ## [1.4.0] - 2026-10-28
 
 ### AI Console 1.1.0

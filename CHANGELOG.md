@@ -6,6 +6,15 @@ All notable changes to this package are documented here. Both the package and ea
 `## [x.y.z]` is the **package** release you install. Inside each release, `### Feature x.y.z` is that
 **feature's** own version; features not listed are unchanged.
 
+## [1.4.2] - 2026-11-12
+
+### AI Console 1.1.2
+- Compile errors are no longer missing when the Editor opens a project whose scripts don't compile.
+  Those scripts were compiled before the console loaded, so `status.txt` said `compile=failed
+  compile_errors=0`, `errors.md` listed none and the window showed none. The console now reads them
+  from Unity's own Console on load (file, line, column and message). If that isn't possible in a
+  Unity version, it asks Unity to compile once more, once per Editor session, which reports them.
+
 ## [1.4.1] - 2026-11-12
 
 ### AI Console 1.1.1

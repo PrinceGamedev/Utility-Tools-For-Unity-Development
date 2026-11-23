@@ -504,8 +504,9 @@ namespace UtilityTools.AIConsole
             s.agentAutoUpdate = EditorGUILayout.Toggle(new GUIContent("Keep sections up to date",
                 "After a package update or a folder change, refresh sections that are already there. " +
                 "Files without the section are never touched."), s.agentAutoUpdate);
-            s.aiCommandsEnabled = EditorGUILayout.Toggle(new GUIContent("Accept commands (commands.txt)",
-                "Agents can import and compile, clear, enter and leave Play Mode, add markers, show entries and ask you for help."),
+            s.aiCommandsEnabled = EditorGUILayout.Toggle(new GUIContent("Accept commands (commands.txt, queue/)",
+                "Agents can import and compile, clear, enter and leave Play Mode, add markers, show entries, ask you for help " +
+                "and take the Editor lease. Several agents use their own files in queue/."),
                 s.aiCommandsEnabled);
             using (new EditorGUI.DisabledScope(!s.aiCommandsEnabled))
                 s.aiAllowMenuCommands = EditorGUILayout.Toggle(new GUIContent("Allow menu commands",

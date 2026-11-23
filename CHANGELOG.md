@@ -6,6 +6,29 @@ All notable changes to this package are documented here. Both the package and ea
 `## [x.y.z]` is the **package** release you install. Inside each release, `### Feature x.y.z` is that
 **feature's** own version; features not listed are unchanged.
 
+## [1.5.0] - 2026-11-23
+
+### AI Console 1.2.0
+Several AI agents can now share one Editor safely.
+- **Request queue.** Each agent writes its own file to `queue/<agent>_<anything>.txt` and gets its own
+  answer in `results/<same name>`. Before, two agents writing `commands.txt` at the same moment could
+  lose a batch or read each other's results.
+  - Unity runs one batch at a time, oldest file first.
+  - Each answer's first line names the agent and the request.
+  - `history.jsonl` records every finished batch.
+  - Answers older than a day are deleted.
+- **Editor lease.** `lease take <minutes> <task>` (max 15) reserves the Editor for multi-step work.
+  While another agent holds it, batches that change anything wait in the queue, and read-only batches
+  still run. The lease expires on its own.
+  - `lease renew` extends it and `lease release` frees it.
+  - `lease break` frees a stuck lease and logs it in the console.
+  - `lease status` shows the holder.
+  - With no lease held, nothing changes.
+- `status.txt` adds `queue=N` and `lease=…`. These are new keys only, so the schema is unchanged.
+- The agent instruction section (v3) and `AI-README.md` explain the queue and the lease. Installed
+  `CLAUDE.md` / `AGENTS.md` sections show as outdated until updated.
+- `commands.txt` works exactly as before, as the agent `anonymous`.
+
 ## [1.4.2] - 2026-11-12
 
 ### AI Console 1.1.2

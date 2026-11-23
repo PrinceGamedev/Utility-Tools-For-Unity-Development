@@ -46,6 +46,13 @@ namespace UtilityTools.AIConsole
             sb.Append(" last_id=").Append(ConsoleStore.LastId);
             if (editorRunning && AICommands.TryGetPendingAsk(out _)) sb.Append(" ask=pending");
             else if (editorRunning && AICommands.Busy) sb.Append(" commands=running");
+            if (editorRunning)
+            {
+                sb.Append(" queue=").Append(AICommands.QueueLength);
+                var lease = AICommands.Lease;
+                if (AgentLease.IsActive(lease, DateTime.UtcNow)) sb.Append(" lease=").Append(lease.agent).Append(" lease_until=").Append(lease.expires);
+                else sb.Append(" lease=free");
+            }
             sb.Append(" unity=").Append(Application.unityVersion);
             sb.Append(" updated=").Append(IsoNow());
             sb.Append('\n');
@@ -337,6 +344,8 @@ Your batch is finished when commands.txt is gone and results.txt starts with `st
 | `mark <label>` | adds a marker entry to bracket a test run | `#id` of the marker |
 | `show <id>` | opens the AI Console on that entry for the user | |
 | `ask <text>` | shows a request card with Done / Can't do it; waits for the user | `user=done note=""…"" logs=#a..#b (…)` |
+| `lease take <min> <task>` | reserves the Editor for you (≤ {AgentLease.MaxMinutes} min) | `taken until …` / `held by …` |
+| `lease renew <min>` / `release` / `break` / `status` | extend, free, force-free a stuck lease, show it | |
 | `status` | nothing; the batch ends with the status line | |
 | `menu <path>` | runs a menu item — only if allowed in Project Settings | |
 
@@ -345,6 +354,20 @@ Wait for a batch (bash):
 
 PowerShell:
 `$f='{folder}'; Set-Content $f/commands.txt 'refresh'; for($i=0;$i -lt 120;$i++){{ if(!(Test-Path $f/commands.txt) -and (Get-Content $f/results.txt -TotalCount 1) -like 'state=done*'){{break}}; Start-Sleep 1 }}; Get-Content $f/results.txt`
+
+**Several agents — queue/ → results/**
+Agents working at the same time must not share commands.txt. Each agent writes its own request file
+`{folder}/queue/<agent>_<anything>.txt` (write `<name>.tmp`, then rename; `.tmp` files are ignored).
+The agent id is the text before the first `_`. Unity runs one batch at a time, oldest file first, and writes the
+answer to `{folder}/results/<same name>`: same format as results.txt, with `agent=… request=…` on line 1.
+Your batch is finished when your request file is gone and your answer starts with `state=done`. Answers older
+than a day are deleted; `{folder}/history.jsonl` keeps one line per finished batch.
+
+**Editor lease** — exclusive use for multi-step work (play → test → stop). `lease take <minutes> <task>` (max
+{AgentLease.MaxMinutes}); `lease release` when done. While another agent holds it, batches that do anything beyond
+`status` `show` `mark` `wait` `lease` stay queued until it's released or expires. With no lease, every batch runs.
+`status.txt` shows `queue=N` and `lease=free` or `lease=<agent> lease_until=<time>`; `{folder}/lease.json` holds
+the details. `lease break` frees a stuck lease (logged in the console).
 
 Not picked up within ~10 s: Unity is closed (status `state=closed`), busy, or throttled in the background —
 ask the user to click the Unity window. Commands can be turned off in Project Settings › Utility Tools › AI Console.

@@ -103,7 +103,8 @@ card; press **Set up**. It writes a short managed section (~350 tokens) into the
 files your project already has, or creates `CLAUDE.md` + `AGENTS.md`. Agents read those files at the
 start of every session, so they know how to:
 - read Unity's state (`status.txt` → `errors.md` → `session.jsonl`);
-- drive the Editor through `commands.txt` (compile, play, stop, clear, markers);
+- drive the Editor through `commands.txt` (compile, play, stop, clear, markers), or their own request
+  file in `queue/` when several agents work at once;
 - ask you for help in the AI Console when they need you.
 
 Supported files: `CLAUDE.md` (Claude Code), `AGENTS.md` (Codex, Cursor, Copilot, Jules, Aider…),
@@ -140,6 +141,32 @@ The answer goes back to the agent with the ids of the logs written while you did
 exactly the reproduction and nothing else. Commands work while Unity is in the background, though
 the OS may throttle it; if a command isn't picked up, the agent asks you to click the Unity window.
 `menu <path>` (run any menu item) is off unless you allow it in Project Settings.
+
+### Several agents at once — `queue/` and the Editor lease
+
+When a team of agents shares one Editor, each agent uses its own request file instead of
+`commands.txt`, so no batch is lost and nobody reads someone else's answer:
+
+- **Queue:** write `Logs/AIConsole/queue/<agent>_<anything>.txt` (write `<name>.tmp`, then rename).
+  The agent id is the text before the first `_`. Unity runs one batch at a time, oldest first, and
+  answers in `Logs/AIConsole/results/<same name>`, which has `agent=… request=…` on its first line.
+  `history.jsonl` keeps one line per finished batch, and answers older than a day are deleted.
+- **Lease:** `lease take <minutes> <task>` (max 15) reserves the Editor for multi-step work such as
+  play → test → stop. While another agent holds it, batches that do more than read (`status`, `show`,
+  `mark`, `wait`, `lease`) wait in the queue until it's released or expires. With no lease, every
+  batch runs as before.
+  - `lease renew <minutes>` extends it and `lease release` frees it.
+  - `lease break` frees a stuck lease, and leaves a marker in the console.
+  - `lease status` shows who holds it.
+- `status.txt` adds `queue=N` and `lease=free` or `lease=<agent> lease_until=<time>`. `lease.json`
+  holds the details.
+
+```
+f=Logs/AIConsole; r=gameplay-01_$(date +%s).txt
+printf 'lease take 10 balance pass\nplay\nwait 5\nstop\nlease release\n' > $f/queue/$r.tmp && mv $f/queue/$r.tmp $f/queue/$r
+```
+
+`commands.txt` keeps working; its batches belong to the agent `anonymous`.
 
 Example `status.txt`:
 ```
@@ -363,7 +390,7 @@ To pin a specific version, append a release tag (see the repo's
 [Tags](https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development/tags)) or a commit hash:
 
 ```
-https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.4.2
+https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.5.0
 ```
 
 ### Versions

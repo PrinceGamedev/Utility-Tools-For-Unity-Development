@@ -230,15 +230,21 @@ namespace UtilityTools.AIConsole
                     return;
                 }
 
-                // Write next to the target, then swap, so readers never see a half-written file.
-                string tmp = path + ".tmp";
-                File.WriteAllText(tmp, content, new UTF8Encoding(false));
-                MoveOver(tmp, path);
+                WriteAtomic(path, content);
             }
             catch (Exception e)
             {
                 WarnOnce(e);
             }
+        }
+
+        /// <summary>Writes next to the target, then swaps, so readers never see a half-written file.</summary>
+        internal static void WriteAtomic(string path, string content)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, content, new UTF8Encoding(false));
+            MoveOver(tmp, path);
         }
 
         private static void MoveOver(string from, string to)

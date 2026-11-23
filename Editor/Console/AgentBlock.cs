@@ -23,7 +23,7 @@ namespace UtilityTools.AIConsole
     internal static class AgentBlock
     {
         /// <summary>Bump when the section's wording changes; installed sections then show as outdated.</summary>
-        internal const int Version = 2;
+        internal const int Version = 3;
 
         internal const string BeginPrefix = "<!-- utilitytools:ai-console:begin";
         internal const string End = "<!-- utilitytools:ai-console:end -->";
@@ -35,7 +35,8 @@ namespace UtilityTools.AIConsole
         internal static string Build(string folder)
         {
             string f = string.IsNullOrWhiteSpace(folder) ? "Logs/AIConsole" : folder.Trim().Replace('\\', '/').TrimEnd('/');
-            return Begin + "\n" +
+            // The verbatim text below takes this file's line endings, which are CRLF in an autocrlf checkout.
+            return Normalize(Begin + "\n" +
 $@"## Unity Editor console (Utility Tools AI Console)
 
 The Unity Editor mirrors its console and compile state into `{f}/`. Read those files instead of asking the user to copy logs.
@@ -46,10 +47,16 @@ The Unity Editor mirrors its console and compile state into `{f}/`. Read those f
 - `#812` in the user's words is an entry id in these files.
 
 Drive the Editor: write commands, one per line, to `{f}/commands.txt`. Unity takes the file, runs the commands in order and writes `results.txt` (first line `state=running|done`, then one line per command, then the status line).
-`refresh` (import + compile after edits) · `compile` (`compile all` = clean rebuild, every warning) · `clear` · `play` · `stop` · `wait <seconds>` · `mark <label>` · `show <id>` · `ask <what the user should do>` · `status` · `help`
+`refresh` (import + compile after edits) · `compile` (`compile all` = clean rebuild, every warning) · `clear` · `play` · `stop` · `wait <seconds>` · `mark <label>` · `show <id>` · `ask <what the user should do>` · `lease take|renew|release|break` · `status` · `help`
 
 ```
 f={f}; printf 'refresh\n' > $f/commands.txt; for i in $(seq 120); do [ ! -e $f/commands.txt ] && grep -q '^state=done' $f/results.txt && break; sleep 1; done; cat $f/results.txt
+```
+
+Several agents at once: don't share commands.txt. Write `{f}/queue/<agent>_<n>.txt` (write `….tmp`, then rename); the answer is `{f}/results/<same name>`, done when the request is gone and the answer starts with `state=done`. Before multi-step work (play → test → stop) send `lease take <minutes> <task>` (max 15) and `lease release` after. While another agent holds the lease your batch waits, unless it only uses `status` `show` `mark` `wait` `lease`. `status.txt` shows `queue=N lease=<agent>|free`.
+
+```
+f={f}; r=myagent_$(date +%s).txt; printf 'refresh\n' > $f/queue/$r.tmp && mv $f/queue/$r.tmp $f/queue/$r; for i in $(seq 120); do [ ! -e $f/queue/$r ] && grep -q '^state=done' $f/results/$r 2>/dev/null && break; sleep 1; done; cat $f/results/$r
 ```
 
 - Debug loop: edit → `refresh` → results.txt → `errors.md` if not ok → fix → repeat.
@@ -60,7 +67,7 @@ f={f}; printf 'refresh\n' > $f/commands.txt; for i in $(seq 120); do [ ! -e $f/c
 - Tags are defined once with their colour in the project's static class of `LogTag`s (e.g. `public static readonly LogTag UI = new LogTag(""UI"", ""#4FC3F7"");`). Reuse them — `Debug.Log($""{{Tags.UI}} Opened"")` or `Log.Tagged(Tags.UI).Info(""…"")` — and add new tags to that class instead of typing ad-hoc `[Tag]` strings.
 
 Full reference: `{f}/AI-README.md`.
-" + End + "\n";
+" + End + "\n");
         }
 
         internal static bool Contains(string text) =>
@@ -148,7 +155,7 @@ Full reference: `{f}/AI-README.md`.
 
         /// <summary>Verbs Unity understands; anything else fails with a hint to send <c>help</c>.</summary>
         internal static readonly string[] Verbs =
-            { "refresh", "compile", "clear", "play", "stop", "pause", "resume", "wait", "mark", "show", "ask", "status", "menu", "help" };
+            { "refresh", "compile", "clear", "play", "stop", "pause", "resume", "wait", "mark", "show", "ask", "lease", "status", "menu", "help" };
 
         /// <summary>
         /// Splits commands.txt into commands. Blank lines and lines starting with <c>//</c> are skipped;

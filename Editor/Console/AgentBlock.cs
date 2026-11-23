@@ -23,7 +23,7 @@ namespace UtilityTools.AIConsole
     internal static class AgentBlock
     {
         /// <summary>Bump when the section's wording changes; installed sections then show as outdated.</summary>
-        internal const int Version = 3;
+        internal const int Version = 4;
 
         internal const string BeginPrefix = "<!-- utilitytools:ai-console:begin";
         internal const string End = "<!-- utilitytools:ai-console:end -->";
@@ -53,14 +53,16 @@ Drive the Editor: write commands, one per line, to `{f}/commands.txt`. Unity tak
 f={f}; printf 'refresh\n' > $f/commands.txt; for i in $(seq 120); do [ ! -e $f/commands.txt ] && grep -q '^state=done' $f/results.txt && break; sleep 1; done; cat $f/results.txt
 ```
 
-Several agents at once: don't share commands.txt. Write `{f}/queue/<agent>_<n>.txt` (write `….tmp`, then rename); the answer is `{f}/results/<same name>`, done when the request is gone and the answer starts with `state=done`. Before multi-step work (play → test → stop) send `lease take <minutes> <task>` (max 15) and `lease release` after. While another agent holds the lease your batch waits, unless it only uses `status` `show` `mark` `wait` `lease`. `status.txt` shows `queue=N lease=<agent>|free`.
+Several agents at once: don't share commands.txt. Write `{f}/queue/<agent>_<n>.txt` (write `….tmp`, then rename); the answer is `{f}/results/<same name>`, done when the request is gone and the answer starts with `state=done`. Before multi-step work (play → test → stop) send `lease take <minutes> <task>` (max 15) and `lease release` after. While another agent holds the lease your batch waits, unless it only uses `status` `show` `mark` `wait` `lease` `inspect` `screenshot`. `status.txt` shows `queue=N lease=<agent>|free`.
+
+More commands: `scene [open <path> [force]]` · `packages resolve` (after editing Packages/manifest.json) · `run` (lists the project's commands) / `run <id> [args]` · `test editmode|playmode [filter]` (counts, failing tests, NUnit XML) · `screenshot game|scene [file.png] [width height]` (then read the PNG) · `inspect <hierarchy path> [component]`. Long output goes to `{f}/out/` and the result line names the file.
 
 ```
 f={f}; r=myagent_$(date +%s).txt; printf 'refresh\n' > $f/queue/$r.tmp && mv $f/queue/$r.tmp $f/queue/$r; for i in $(seq 120); do [ ! -e $f/queue/$r ] && grep -q '^state=done' $f/results/$r 2>/dev/null && break; sleep 1; done; cat $f/results/$r
 ```
 
 - Debug loop: edit → `refresh` → results.txt → `errors.md` if not ok → fix → repeat.
-- Check behaviour: `clear`, `play`, `wait 5`, `stop`, then `errors.md` or grep `session.jsonl`.
+- Check behaviour: `clear`, `play`, `wait 5`, `stop`, then `errors.md` or grep `session.jsonl`; or `test playmode`; or `screenshot game` while playing.
 - Need the user (reproduce a bug, click something, set up a scene)? Send `ask <short instruction>` and say so in chat. It appears in the AI Console with Done / Can't buttons; the result lists the log ids written meanwhile. Re-run the wait loop until it is answered.
 - commands.txt not picked up within ~10 s: Unity is closed, busy or throttled in the background. Ask the user to click the Unity window.
 - Logging in new code (`using UtilityTools.Logging;`, stripped from release builds): `static readonly LogChannel Log = new LogChannel(""Spawner"", ""#4FC3F7"");` then `Log.Info(""Spawned"", (""count"", n));`.

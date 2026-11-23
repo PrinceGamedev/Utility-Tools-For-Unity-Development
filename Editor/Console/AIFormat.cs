@@ -346,8 +346,17 @@ Your batch is finished when commands.txt is gone and results.txt starts with `st
 | `ask <text>` | shows a request card with Done / Can't do it; waits for the user | `user=done note=""…"" logs=#a..#b (…)` |
 | `lease take <min> <task>` | reserves the Editor for you (≤ {AgentLease.MaxMinutes} min) | `taken until …` / `held by …` |
 | `lease renew <min>` / `release` / `break` / `status` | extend, free, force-free a stuck lease, show it | |
+| `scene` / `scene open <path> [force]` | lists open scenes / opens one (`force` discards unsaved changes) | `opened …` |
+| `packages resolve` | re-reads Packages/manifest.json, waits for any compile | `resolved; compiled` / `…nothing to compile` |
+| `run` / `run <id> [args]` | lists / calls the project's `[UtilityTools.AgentCommand(""id"")]` static methods | the method's return value |
+| `test editmode\|playmode [filter]` | runs Unity tests; filter = regex on the full test name | `passed=N failed=N … results=tests/….xml failing: …` |
+| `screenshot game\|scene [file.png] [w h]` | saves a PNG (Play Mode `game` without a size includes UI) | `saved shots/….png` |
+| `inspect <path> [component]` | a GameObject's components and serialized fields | summary + `out/` file |
 | `status` | nothing; the batch ends with the status line | |
 | `menu <path>` | runs a menu item — only if allowed in Project Settings | |
+
+Output longer than a line (inspect, run) is written to `{folder}/out/<request>_<n>.txt` and the result names the
+file. Screenshots default to `{folder}/shots/`, test results to `{folder}/tests/`.
 
 Wait for a batch (bash):
 `f={folder}; printf 'refresh\n' > $f/commands.txt; for i in $(seq 120); do [ ! -e $f/commands.txt ] && grep -q '^state=done' $f/results.txt && break; sleep 1; done; cat $f/results.txt`
@@ -365,7 +374,7 @@ than a day are deleted; `{folder}/history.jsonl` keeps one line per finished bat
 
 **Editor lease** — exclusive use for multi-step work (play → test → stop). `lease take <minutes> <task>` (max
 {AgentLease.MaxMinutes}); `lease release` when done. While another agent holds it, batches that do anything beyond
-`status` `show` `mark` `wait` `lease` stay queued until it's released or expires. With no lease, every batch runs.
+`status` `show` `mark` `wait` `lease` `inspect` `screenshot` stay queued until it's released or expires. With no lease, every batch runs.
 `status.txt` shows `queue=N` and `lease=free` or `lease=<agent> lease_until=<time>`; `{folder}/lease.json` holds
 the details. `lease break` frees a stuck lease (logged in the console).
 

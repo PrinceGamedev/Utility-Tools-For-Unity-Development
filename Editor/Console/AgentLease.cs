@@ -30,11 +30,15 @@ namespace UtilityTools.AIConsole
 
         internal const string Usage = "usage: lease take <minutes> <task> | renew <minutes> | release | break | status";
 
-        /// <summary>Commands that never need the lease: they read state or only affect the sender's own batch.</summary>
+        /// <summary>Built-in commands that never need the lease: they read state or only affect the sender's own batch.</summary>
         private static readonly HashSet<string> FreeVerbs =
             new HashSet<string>(StringComparer.Ordinal) { "status", "help", "show", "mark", "wait", "lease" };
 
-        internal static bool NeedsLease(string verb) => !FreeVerbs.Contains(verb ?? "");
+        internal static bool NeedsLease(string verb)
+        {
+            if (FreeVerbs.Contains(verb ?? "")) return false;
+            return !(AgentVerbs.TryGet(verb, out var extension) && extension.ReadOnly);
+        }
 
         internal static bool IsActive(LeaseInfo lease, DateTime nowUtc) =>
             lease != null && !string.IsNullOrEmpty(lease.agent) && TryParse(lease.expires, out var until) && until > nowUtc;

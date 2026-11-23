@@ -1,0 +1,29 @@
+{
+    "name": "UtilityTools.Editor.TestBridge",
+    "rootNamespace": "UtilityTools",
+    "references": [
+        "UtilityTools.Runtime",
+        "UtilityTools.Editor",
+        "UnityEditor.TestRunner",
+        "UnityEngine.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UTILITYTOOLS_TEST_FRAMEWORK"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.test-framework",
+            "expression": "1.1.0",
+            "define": "UTILITYTOOLS_TEST_FRAMEWORK"
+        }
+    ],
+    "noEngineReferences": false
+}

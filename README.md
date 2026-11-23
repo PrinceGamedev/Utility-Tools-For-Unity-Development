@@ -168,6 +168,34 @@ printf 'lease take 10 balance pass\nplay\nwait 5\nstop\nlease release\n' > $f/qu
 
 `commands.txt` keeps working; its batches belong to the agent `anonymous`.
 
+### More commands — scenes, packages, project commands, tests, screenshots, inspect
+
+```
+scene                                list the open scenes
+scene open Assets/Scenes/Level1.unity   open one (add `force` to discard unsaved changes)
+packages resolve                     re-read Packages/manifest.json after editing it
+run                                  list the project's agent commands
+run level.reset 2                    call one
+test playmode Combat                 run tests (filter = regex on the full name)
+screenshot game                      save a PNG of the Game view (with UI in Play Mode)
+inspect Player/Weapon Gun            a GameObject's components and fields
+```
+
+- **Project commands:** mark a static method with `[UtilityTools.AgentCommand("id", "usage")]`. It takes no
+  parameters, or one `string` with the rest of the line. Its return value is the result; throw to fail. Only
+  marked methods can run, so agents never run arbitrary code.
+  ```csharp
+  [AgentCommand("level.reset", "level.reset [index]")]
+  static string ResetLevel(string args) { … return "reset level 2"; }
+  ```
+- **Tests:** `test` needs the Test Framework package and reports `passed=… failed=… results=tests/….xml`
+  plus the failing test names. After a Play Mode run it waits until Unity has put your scenes back.
+- **Screenshots:** the agent reads the PNG to check layout and camera framing. In Play Mode, `screenshot game`
+  captures the whole Game view including UI. With a size, or in Edit Mode, it renders the camera alone.
+- **Read-only:** `inspect` and `screenshot` run even while another agent holds the lease.
+- **Long output:** multi-line output (inspect, run) goes to `Logs/AIConsole/out/` and the result names the
+  file.
+
 Example `status.txt`:
 ```
 state=errors mode=play compile=ok compiled_at=2026-10-28T12:01:33.120Z compile_errors=0 errors=2 warnings=5 last_id=812 unity=6000.1.17f1 updated=2026-10-28T12:04:11.300Z
@@ -390,7 +418,7 @@ To pin a specific version, append a release tag (see the repo's
 [Tags](https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development/tags)) or a commit hash:
 
 ```
-https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.5.0
+https://github.com/PrinceGamedev/Utility-Tools-For-Unity-Development.git#v1.6.0
 ```
 
 ### Versions

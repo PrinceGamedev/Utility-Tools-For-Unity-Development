@@ -94,14 +94,45 @@ namespace UtilityTools.AIConsole
             File.AppendAllText(Path.Combine(folder, HistoryFile), jsonLine + "\n", new UTF8Encoding(false));
         }
 
-        /// <summary>Deletes answers older than a day so <c>results/</c> doesn't grow forever.</summary>
+        /// <summary>Deletes answers and outputs older than a day so <c>results/</c> and <c>out/</c> don't grow forever.</summary>
         internal static void PruneResults(string folder, DateTime nowUtc)
         {
-            string results = Path.Combine(folder, ResultsFolder);
-            if (!Directory.Exists(results)) return;
+            foreach (string sub in new[] { ResultsFolder, OutFolder })
+            {
+                string dir = Path.Combine(folder, sub);
+                if (!Directory.Exists(dir)) continue;
 
-            foreach (string path in Directory.GetFiles(results))
-                if (nowUtc - File.GetLastWriteTimeUtc(path) > ResultsRetention) File.Delete(path);
+                foreach (string path in Directory.GetFiles(dir))
+                    if (nowUtc - File.GetLastWriteTimeUtc(path) > ResultsRetention) File.Delete(path);
+            }
+        }
+
+        // ---------- Long command output ----------
+
+        internal const string OutFolder = "out";
+        private const int MaxInlineChars = 300;
+        private const int SummaryChars = 160;
+
+        /// <summary>True when a result is too long, or multi-line, to sit on its line in the answer.</summary>
+        internal static bool NeedsOutputFile(string result) =>
+            result != null && (result.Length > MaxInlineChars || result.IndexOf('\n') >= 0);
+
+        /// <summary>Writes a command's full output to <c>out/&lt;request&gt;_&lt;n&gt;.txt</c>; returns the path under the AI folder.</summary>
+        internal static string WriteOutput(string folder, string requestName, int commandNumber, string text)
+        {
+            string stem = Path.GetFileNameWithoutExtension(requestName ?? "commands");
+            string relative = OutFolder + "/" + stem + "_" + commandNumber + ".txt";
+            AIBridge.WriteAtomic(Path.Combine(folder, OutFolder, stem + "_" + commandNumber + ".txt"), text);
+            return relative;
+        }
+
+        /// <summary>The first line of an output, clipped, for the one-line result.</summary>
+        internal static string Summary(string text)
+        {
+            string first = (text ?? "").Replace("\r", "");
+            int newline = first.IndexOf('\n');
+            if (newline >= 0) first = first.Substring(0, newline);
+            return first.Length > SummaryChars ? first.Substring(0, SummaryChars) + "…" : first;
         }
     }
 }

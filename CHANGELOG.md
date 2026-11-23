@@ -6,6 +6,29 @@ All notable changes to this package are documented here. Both the package and ea
 `## [x.y.z]` is the **package** release you install. Inside each release, `### Feature x.y.z` is that
 **feature's** own version; features not listed are unchanged.
 
+## [1.6.0] - 2026-11-23
+
+### AI Console 1.3.0
+Agents can now do most Editor work without a person at the keyboard. New commands:
+- `scene` lists the open scenes; `scene open <path> [force]` opens one. It refuses to discard unsaved
+  changes unless `force` is given.
+- `packages resolve` re-reads `Packages/manifest.json` and waits for any compile. Before, Unity only did
+  this when its window got focus.
+- `run <id> [args]` calls project commands: static methods marked with the new
+  `[UtilityTools.AgentCommand("id", "usage")]`. `run` alone lists them. Only marked methods can run.
+- `test editmode|playmode [filter]` runs Unity Test Framework tests and reports counts, failing tests and
+  the NUnit XML path. It only compiles when the Test Framework package is installed.
+  - After a Play Mode run it waits until Unity has left Play Mode and restored your scenes.
+  - If the runner leaves an empty scene behind, it reopens the scenes that were open before.
+- `screenshot game|scene [file.png] [width height]` saves a PNG. In Play Mode, `game` captures the Game
+  view with its UI.
+- `inspect <hierarchy path> [component]` lists a GameObject's components and serialized fields.
+- `inspect` and `screenshot` are read-only, so they also run while another agent holds the lease.
+- Output too long for one line is written to `out/<request>_<n>.txt`, and the result names the file.
+- `help` lists the new commands, and the agent instruction section (v4) and `AI-README.md` describe them.
+- Inside the package, commands besides the built-ins are now small classes that register with the
+  runner. That keeps `AICommands` from growing with each one.
+
 ## [1.5.0] - 2026-11-23
 
 ### AI Console 1.2.0

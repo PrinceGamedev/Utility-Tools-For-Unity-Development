@@ -43,6 +43,7 @@ namespace UtilityTools.AIConsole
             public bool compileSeen;
             public int fromId;         // ask: first entry id written while waiting
             public double seconds;
+            public string data;        // state an extension verb keeps across domain reloads
         }
 
         [Serializable]
@@ -371,11 +372,12 @@ namespace UtilityTools.AIConsole
                         return;
 
                     case "help":
-                        Finish(c, true, "verbs: " + string.Join(" ", CommandLine.Verbs));
+                        Finish(c, true, Help());
                         return;
 
                     default:
-                        Finish(c, false, "unknown command — send `help`");
+                        if (AgentVerbs.TryGet(c.verb, out var verb)) RunVerb(c, verb, starting: true);
+                        else Finish(c, false, "unknown command — send `help`");
                         return;
                 }
             }
@@ -441,9 +443,45 @@ namespace UtilityTools.AIConsole
                     return; // answered from the window
 
                 default:
-                    Finish(c, false, "interrupted");
+                    if (AgentVerbs.TryGet(c.verb, out var verb)) RunVerb(c, verb, starting: false);
+                    else Finish(c, false, "interrupted");
                     return;
             }
+        }
+
+        private static void RunVerb(Command c, IAgentVerb verb, bool starting)
+        {
+            var call = new AgentVerbCall(c.arg, s_Batch.agent, s_Batch.request, c.n, new DateTime(c.startTicks, DateTimeKind.Utc), c.data);
+            AgentVerbResult result;
+            try
+            {
+                result = starting ? verb.Start(call) : verb.Check(call);
+            }
+            catch (Exception e)
+            {
+                var inner = e is System.Reflection.TargetInvocationException && e.InnerException != null ? e.InnerException : e;
+                Finish(c, false, inner.GetType().Name + ": " + inner.Message);
+                return;
+            }
+
+            if (result.Done)
+            {
+                Finish(c, result.Ok, result.Text);
+                return;
+            }
+
+            if (call.Data == c.data && !starting) return;
+            c.data = call.Data;
+            Save();
+            WriteResults();
+            Changed?.Invoke();
+        }
+
+        private static string Help()
+        {
+            var sb = new StringBuilder("verbs: ").Append(string.Join(" ", CommandLine.Verbs));
+            foreach (var verb in AgentVerbs.All) sb.Append(" · ").Append(verb.Usage);
+            return sb.ToString();
         }
 
         private static void Show(Command c)
@@ -498,10 +536,30 @@ namespace UtilityTools.AIConsole
         private static void Finish(Command c, bool ok, string result)
         {
             c.state = ok ? "done" : "failed";
-            c.result = result;
+            c.result = KeepOnOneLine(c, result);
             Save();
             WriteResults();
             Changed?.Invoke();
+        }
+
+        /// <summary>
+        /// Results are one line each. Longer output (inspect, run) goes to <c>out/</c> and the line points to it.
+        /// </summary>
+        private static string KeepOnOneLine(Command c, string result)
+        {
+            result = result ?? "";
+            if (!AgentQueue.NeedsOutputFile(result)) return result;
+
+            try
+            {
+                string file = AgentQueue.WriteOutput(AIBridge.FullFolder, s_Batch.request, c.n, result);
+                return AgentQueue.Summary(result) + " — full output: " + AIBridge.Folder.Replace('\\', '/').TrimEnd('/') + "/" + file;
+            }
+            catch (Exception e)
+            {
+                WarnOnce(e);
+                return AgentQueue.Summary(result);
+            }
         }
 
         private static void CompleteBatch()

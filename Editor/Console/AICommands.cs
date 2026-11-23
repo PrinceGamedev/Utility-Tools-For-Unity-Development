@@ -50,17 +50,28 @@ namespace UtilityTools.AIConsole
         {
             public int number;
             public long pickedUpTicks;
+            public string agent = AgentQueue.LegacyAgent;
+            public string request = CommandsFile; // file name in queue/, or commands.txt
+            public bool legacy = true;
             public List<Command> commands = new List<Command>();
         }
 
         private static Batch s_Batch;
         private static double s_LastPoll;
         private static bool s_WarnedIo;
+        private static int s_QueueLength;
+        private static LeaseInfo s_Lease;
 
         /// <summary>Raised when a batch starts, a command changes state or an ask is answered.</summary>
         public static event Action Changed;
 
         public static bool Busy => s_Batch != null;
+
+        /// <summary>Requests waiting in the queue at the last poll (not counting the running batch).</summary>
+        internal static int QueueLength => s_QueueLength;
+
+        /// <summary>The lease as of the last poll; <c>null</c> or expired = free.</summary>
+        internal static LeaseInfo Lease => s_Lease;
 
         static AICommands()
         {
@@ -124,53 +135,100 @@ namespace UtilityTools.AIConsole
 
         private static void Tick()
         {
-            if (s_Batch != null)
-            {
-                Advance();
-                return;
-            }
+            if (s_Batch != null) Advance();
 
             if (!Enabled) return;
             double now = EditorApplication.timeSinceStartup;
             if (now - s_LastPoll < PollInterval) return;
             s_LastPoll = now;
-            TryPickUp();
+
+            var pending = RefreshSnapshot();
+            if (s_Batch == null && pending != null) TryPickUp(pending);
         }
 
         private static bool Enabled => ConsoleProjectSettings.instance.aiCommandsEnabled && AIBridge.Enabled;
 
-        private static void TryPickUp()
+        /// <summary>Reloads the lease and the waiting requests; <c>null</c> when the folder can't be read.</summary>
+        private static List<AgentRequest> RefreshSnapshot()
         {
-            string path = Path.Combine(AIBridge.FullFolder, CommandsFile);
-            string text;
             try
             {
-                if (!File.Exists(path)) return;
-                if (DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < SettleTime) return;
-                text = File.ReadAllText(path);
-            }
-            catch (IOException)
-            {
-                return; // still being written; next poll
+                string holderBefore = ActiveHolder();
+                int queueBefore = s_QueueLength;
+
+                s_Lease = AgentLease.Load(AIBridge.FullFolder);
+                var pending = AgentQueue.Pending(AIBridge.FullFolder);
+                s_QueueLength = pending.Count;
+
+                if (queueBefore != s_QueueLength || holderBefore != ActiveHolder()) AIBridge.Flush(true); // keep status.txt's queue/lease current
+                return pending;
             }
             catch (Exception e)
             {
                 WarnOnce(e);
+                return null;
+            }
+        }
+
+        private static string ActiveHolder() => AgentLease.IsActive(s_Lease, DateTime.UtcNow) ? s_Lease.agent : null;
+
+        /// <summary>Starts the oldest request the lease allows. Requests blocked by another agent's lease wait.</summary>
+        private static void TryPickUp(List<AgentRequest> pending)
+        {
+            var nowUtc = DateTime.UtcNow;
+            foreach (var request in pending)
+            {
+                if (nowUtc - request.WrittenUtc < SettleTime) return; // this and every younger file may still be being written
+                if (!TryRead(request.Path, out string text)) return;
+
+                var lines = CommandLine.Parse(text);
+                if (!AgentLease.Allows(s_Lease, request.Agent, lines, nowUtc)) continue;
+
+                StartBatch(request, lines);
                 return;
             }
+        }
 
-            var lines = CommandLine.Parse(text);
+        private static bool TryRead(string path, out string text)
+        {
+            text = null;
+            try
+            {
+                text = File.ReadAllText(path);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false; // still being written; next poll
+            }
+            catch (Exception e)
+            {
+                WarnOnce(e);
+                return false;
+            }
+        }
+
+        private static void StartBatch(AgentRequest request, List<CommandLine> lines)
+        {
             int number = SessionState.GetInt(SeqKey, 0) + 1;
             SessionState.SetInt(SeqKey, number);
-            s_Batch = new Batch { number = number, pickedUpTicks = DateTime.UtcNow.Ticks };
+            s_Batch = new Batch
+            {
+                number = number,
+                pickedUpTicks = DateTime.UtcNow.Ticks,
+                agent = request.Agent,
+                request = request.Name,
+                legacy = request.Legacy
+            };
             for (int i = 0; i < lines.Count; i++)
                 s_Batch.commands.Add(new Command { n = i + 1, verb = lines[i].Verb, arg = lines[i].Arg, text = lines[i].Text });
 
-            // results.txt says "running" before commands.txt disappears, so an agent that sees the file gone
+            // The result says "running" before the request file disappears, so an agent that sees its file gone
             // never reads the previous batch's "done".
             WriteResults();
-            try { File.Delete(path); }
+            try { File.Delete(request.Path); }
             catch (Exception e) { WarnOnce(e); }
+            s_QueueLength = Math.Max(0, s_QueueLength - 1);
 
             if (s_Batch.commands.Count == 0)
             {
@@ -294,6 +352,10 @@ namespace UtilityTools.AIConsole
                         AIConsoleWindow.ShowAsk(c.arg);
                         break;
 
+                    case "lease":
+                        RunLease(c);
+                        return;
+
                     case "status":
                         Finish(c, true, "see status line below");
                         return;
@@ -399,6 +461,24 @@ namespace UtilityTools.AIConsole
             Finish(c, true, "shown #" + id);
         }
 
+        private static void RunLease(Command c)
+        {
+            string folder = AIBridge.FullFolder;
+            var nowUtc = DateTime.UtcNow;
+            var loaded = AgentLease.Load(folder);
+            var current = AgentLease.IsActive(loaded, nowUtc) ? loaded : null;
+            string result = AgentLease.Apply(current, s_Batch.agent, c.arg, nowUtc, out var next, out bool ok);
+
+            if (ok && !ReferenceEquals(next, current))
+            {
+                AgentLease.Store(folder, next);
+                s_Lease = next;
+                ConsoleCapture.AddMarker("◆ Lease: " + s_Batch.agent + " — " + result);
+            }
+
+            Finish(c, ok, result);
+        }
+
         private static string Took(TimeSpan t) => string.Format(CultureInfo.InvariantCulture, " ({0:0.0}s)", t.TotalSeconds);
 
         private static string Summarize(int from, int to)
@@ -433,7 +513,29 @@ namespace UtilityTools.AIConsole
             ConsoleCapture.Drain();
             AIBridge.Flush(true); // status / errors.md current before the agent reads them
             WriteResults(batch, done: true);
+            RecordHistory(batch);
             Changed?.Invoke();
+        }
+
+        /// <summary>One line per finished batch in history.jsonl, and clean-up of old answers.</summary>
+        private static void RecordHistory(Batch batch)
+        {
+            int failed = 0;
+            foreach (var c in batch.commands)
+                if (c.state == "failed") failed++;
+
+            string line = "{\"t\":\"" + AIFormat.IsoNow() + "\",\"batch\":" + batch.number +
+                          ",\"agent\":\"" + batch.agent + "\",\"request\":\"" + batch.request.Replace("\"", "'") +
+                          "\",\"commands\":" + batch.commands.Count + ",\"failed\":" + failed + "}";
+            try
+            {
+                AgentQueue.AppendHistory(AIBridge.FullFolder, line);
+                AgentQueue.PruneResults(AIBridge.FullFolder, DateTime.UtcNow);
+            }
+            catch (Exception e)
+            {
+                WarnOnce(e);
+            }
         }
 
         // ---------- Files ----------
@@ -450,12 +552,7 @@ namespace UtilityTools.AIConsole
             if (batch == null) return;
             try
             {
-                Directory.CreateDirectory(AIBridge.FullFolder);
-                string path = Path.Combine(AIBridge.FullFolder, ResultsFile);
-                string tmp = path + ".tmp";
-                File.WriteAllText(tmp, FormatResults(batch, done), new UTF8Encoding(false));
-                if (File.Exists(path)) File.Replace(tmp, path, null);
-                else File.Move(tmp, path);
+                AIBridge.WriteAtomic(AgentQueue.ResultsPath(AIBridge.FullFolder, batch.legacy, batch.request), FormatResults(batch, done));
             }
             catch (Exception e)
             {
@@ -468,8 +565,9 @@ namespace UtilityTools.AIConsole
             var sb = new StringBuilder(256);
             sb.Append("state=").Append(done ? "done" : "running")
               .Append(" batch=").Append(batch.number)
-              .Append(" picked_up=").Append(new DateTime(batch.pickedUpTicks, DateTimeKind.Utc).ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture))
-              .Append('\n');
+              .Append(" picked_up=").Append(new DateTime(batch.pickedUpTicks, DateTimeKind.Utc).ToString("yyyy-MM-ddTHH:mm:ss.fffZ", CultureInfo.InvariantCulture));
+            if (!batch.legacy) sb.Append(" agent=").Append(batch.agent).Append(" request=").Append(batch.request);
+            sb.Append('\n');
             if (batch.commands.Count == 0) sb.Append("(no commands — write one per line, e.g. `refresh`)\n");
             foreach (var c in batch.commands)
             {
